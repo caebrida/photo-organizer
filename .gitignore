@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Build (PyInstaller)
+build/
+dist/
+*.spec
+!scripts/PhotoOrganizer.spec
+
+# Binários baixados por scripts/fetch_exiftool.py
+photo_organizer/resources/exiftool/
+
+# Modelos das tags (baixados/convertidos por scripts/fetch_models.py)
+photo_organizer/resources/models/*
+!photo_organizer/resources/models/.gitkeep
+
+# Arquivos de amostra pessoais (fotos reais não vão para o repositório)
+tests/samples/
+comparacao_tags/
+
+# Notas e ferramentas locais (fora do repositório público)
+*.md
+design/
+graphify-out/
+.claude/
+.mcp.json
