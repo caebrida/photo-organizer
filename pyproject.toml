@@ -1,8 +1,7 @@
 [project]
 name = "photo-organizer"
 version = "0.1.0"
-description = "Organiza fotos e vídeos por data EXIF/XMP, separa duplicadas e gera tags com OpenCV."
-readme = "PLANO.md"
+description = "Organiza fotos e vídeos por data EXIF/XMP, separa duplicadas e gera tags com IA."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "opencv-python-headless>=5.0.0.93",
