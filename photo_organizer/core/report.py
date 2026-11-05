@@ -50,4 +50,5 @@ def write_report(path: Path, results: Iterable[ItemResult], mode: Mode, lang: st
                     r.error or "",
                 )
             )
+            f.flush()  # cada linha vai para o disco antes do próximo arquivo
     return path

@@ -1,6 +1,8 @@
 import csv
 from datetime import datetime
 
+import pytest
+
 from photo_organizer.core.dates import NO_DATE, DateSource, FileDate
 from photo_organizer.core.executor import ItemResult, Mode, Status
 from photo_organizer.core.planner import PlanItem
@@ -36,3 +38,19 @@ def test_report_rows(tmp_path):
     assert rows[2][0] == "failed"
     assert rows[2][4:10] == ["", "", "", "", "jpeg", "1"]
     assert rows[2][10] == "x;y"  # separador dentro do campo é escapado
+
+
+def test_report_is_written_while_files_are_processed(tmp_path):
+    """Se o programa cair no meio, o CSV já tem os arquivos processados até ali."""
+    path = tmp_path / "r.csv"
+    jpg = MediaFile(tmp_path / "a.jpg", FileKind.JPEG)
+    seen = []
+
+    def results():
+        yield ItemResult(PlanItem(jpg, NO_DATE, tmp_path / "d/a.jpg"), Status.DONE)
+        seen.append(path.read_text("utf-8-sig"))  # antes do segundo arquivo
+        raise RuntimeError("queda no meio da execução")
+
+    with pytest.raises(RuntimeError):
+        write_report(path, results(), Mode.MOVE)
+    assert str(tmp_path / "d/a.jpg") in seen[0]

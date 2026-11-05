@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from photo_organizer.core.images import PREVIEW
 from photo_organizer.core.scanner import MediaFile
+from photo_organizer.tagging.xmp_writer import merge_tags
 from photo_organizer.ui import icons, theme
 from photo_organizer.ui.rules_panel import section_title
 from photo_organizer.ui.workers import TagItem, ThumbnailService
@@ -202,12 +203,12 @@ class TaggingView(QWidget):
         self._update_footer()
 
     def pending(self) -> list[tuple[MediaFile, list[str]]]:
-        """Fotos com tags novas (que a foto ainda não tem) e as tags a gravar."""
+        """Fotos com tags novas e só as tags que cada uma ainda não tem."""
         out = []
         for row, item in enumerate(self.items):
             tags = split_tags(self.table.item(row, COL_SUGGESTED).text())
-            if any(t not in item.current for t in tags):
-                out.append((item.media, tags))
+            if new := merge_tags(item.current, tags)[len(item.current) :]:
+                out.append((item.media, new))
         return out
 
     def mark_written(self, written: list[tuple[MediaFile, list[str]]]) -> None:
@@ -215,7 +216,7 @@ class TaggingView(QWidget):
         self.table.blockSignals(True)
         for row, item in enumerate(self.items):
             if item.media.path in done:
-                item.current = list(dict.fromkeys(item.current + done[item.media.path]))
+                item.current = merge_tags(item.current, done[item.media.path])
                 self.table.item(row, COL_CURRENT).setText(", ".join(item.current))
         self.table.blockSignals(False)
         self._update_footer()
@@ -236,21 +237,24 @@ class TaggingView(QWidget):
         if items := self.pending():
             self.writeRequested.emit(items)
 
-    def _update_buttons(self) -> None:
+    def _update_buttons(self, pending: int | None = None) -> None:
+        if pending is None:
+            pending = len(self.pending())
         self.analyze_button.setEnabled(not self._busy and self.folder is not None)
         self.choose_button.setEnabled(not self._busy)
-        self.write_button.setEnabled(not self._busy and bool(self.items) and bool(self.pending()))
+        self.write_button.setEnabled(not self._busy and pending > 0)
 
     def _update_footer(self) -> None:
+        pending = len(self.pending())  # uma passada só por todas as linhas
         if not self.items:
             self.summary.setText("")
         else:
             n = self.number_locale.toString(len(self.items))
-            k = self.number_locale.toString(len(self.pending()))
+            k = self.number_locale.toString(pending)
             self.summary.setText(
                 self.tr("{n} fotos analisadas · {k} com tags novas para gravar").format(n=n, k=k)
             )
-        self._update_buttons()
+        self._update_buttons(pending)
 
     def _show_row(self, row: int) -> None:
         self.preview.setPixmap(QPixmap())

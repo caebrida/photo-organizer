@@ -17,7 +17,7 @@ from pathlib import Path, PurePath
 
 from photo_organizer.core.dates import FileDate
 from photo_organizer.core.rules import RuleSettings, destination_dir
-from photo_organizer.core.scanner import MediaFile
+from photo_organizer.core.scanner import MediaFile, path_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,13 +48,13 @@ def build_plan(
 ) -> Plan:
     """``duplicates`` são os arquivos que vão para a pasta de duplicadas (fase 3)."""
     root = Path(root)
-    dup_keys = {_key(p) for p in duplicates}
+    dup_keys = {path_key(p) for p in duplicates}
     names = _NameIndex()
     plan = Plan(root)
     for media, date in files:
-        duplicate = _key(media.path) in dup_keys
+        duplicate = path_key(media.path) in dup_keys
         folder = destination_dir(root, media.kind, date.value, settings, duplicate)
-        if _key(folder / media.path.name) == _key(media.path):
+        if path_key(folder / media.path.name) == path_key(media.path):
             plan.items.append(
                 PlanItem(media, date, media.path, media.sidecar, duplicate, skip=True)
             )
@@ -96,7 +96,7 @@ class _NameIndex:
         self._dirs: dict[str, set[str]] = {}
 
     def _names(self, folder: Path) -> set[str]:
-        k = _key(folder)
+        k = path_key(folder)
         if k not in self._dirs:
             try:
                 self._dirs[k] = {n.lower() for n in os.listdir(folder)}  # noqa: PTH208 (só nomes, mais rápido)
@@ -111,7 +111,3 @@ class _NameIndex:
 
     def claim(self, folder: Path, name: str) -> None:
         self._names(folder).add(name.lower())
-
-
-def _key(path: str | Path) -> str:
-    return os.path.normcase(os.path.abspath(path))  # noqa: PTH100 (resolve() acessa o disco)

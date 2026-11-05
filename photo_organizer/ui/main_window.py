@@ -151,11 +151,10 @@ class MainWindow(QMainWindow):
         self.dest: Path | None = None
         self.scan_result: ScanResult | None = None
         self.plan: Plan | None = None
-        self.plan_options: PlanOptions | None = None
         self._task: Task | None = None
         self.last_summary: ExecutionSummary | None = None
         self._plan_tasks: list[Task] = []
-        self._plan_gen = 0
+        self._plan_gen = self._done_gen = 0  # plano pedido / plano que chegou
         self._plan_timer = QTimer(self, singleShot=True, interval=250)
         self._plan_timer.timeout.connect(self._start_plan)
 
@@ -301,7 +300,7 @@ class MainWindow(QMainWindow):
             chip.setObjectName("FilterChip")
             chip.setCheckable(True)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
-            chip.clicked.connect(lambda _=False, v=f: self.library_model.set_filter(v))
+            chip.clicked.connect(lambda _=False, v=f: self._set_filter(v))
             self.filters.addButton(chip)
             self.filter_buttons[f] = chip
             head.addWidget(chip)
@@ -489,6 +488,10 @@ class MainWindow(QMainWindow):
 
     def schedule_plan(self) -> None:
         self._plan_timer.start()
+        self._update_state()  # o plano atual ficou velho: Organizar espera o novo
+
+    def _plan_pending(self) -> bool:
+        return self._plan_timer.isActive() or self._done_gen != self._plan_gen
 
     def _start_plan(self) -> None:
         self._plan_timer.stop()
@@ -519,13 +522,22 @@ class MainWindow(QMainWindow):
         task = Task(plan_job, result, options)
         task.signals.finished.connect(lambda plan, g=gen, o=options: self._on_planned(plan, g, o))
         task.signals.failed.connect(self._on_failed)
-        self._plan_tasks = [t for t in self._plan_tasks if t is not task][-3:] + [task]
+        # O Task precisa de referência até terminar (setAutoDelete(False)); solta depois.
+        for signal in (task.signals.finished, task.signals.failed):
+            signal.connect(lambda *_, t=task: QTimer.singleShot(0, lambda: self._forget(t)))
+        self._plan_tasks.append(task)
         self.pool.start(task)
+        self._update_state()
+
+    def _forget(self, task: Task) -> None:
+        if task in self._plan_tasks:
+            self._plan_tasks.remove(task)
 
     def _on_planned(self, plan: Plan, gen: int, options: PlanOptions) -> None:
         if gen != self._plan_gen or self.scan_result is None:
             return
-        self.plan, self.plan_options = plan, options
+        self._done_gen = gen
+        self.plan = plan
         current = self.library.currentIndex().data(Qt.ItemDataRole.UserRole + 1)
         self.library_model.set_plan(plan, options.rule_settings())
         self.center_stack.setCurrentWidget(self.library)
@@ -534,20 +546,24 @@ class MainWindow(QMainWindow):
             self._reselect(current)
         self._update_state()
 
+    def _set_filter(self, value: Filter) -> None:
+        self.library_model.set_filter(value)
+        self._update_state()  # a contagem do cabeçalho acompanha o filtro
+
     def _reselect(self, previous) -> None:
         path = getattr(getattr(previous, "media", None), "path", None)
-        for row in range(self.library_model.rowCount()):
+        row = self.library_model.row_of(path) if path is not None else None
+        if row is not None:
             idx = self.library_model.index(row)
-            item = idx.data(Qt.ItemDataRole.UserRole + 1)
-            if getattr(getattr(item, "media", None), "path", None) == path:
-                self.library.setCurrentIndex(idx)
-                self.library.scrollTo(idx)
-                return
+            self.library.setCurrentIndex(idx)
+            self.library.scrollTo(idx)
 
     # --- Organizar --------------------------------------------------------------------
 
     def start_organize(self) -> None:
         if self._task is not None or self.plan is None or self.dest is None:
+            return
+        if self._plan_pending():  # destino/regras mudaram e o plano novo ainda não chegou
             return
         if problem := self._folder_problem(self.dest):
             self._warn_folder(
@@ -823,7 +839,7 @@ class MainWindow(QMainWindow):
         todo = len(plan.to_process) if plan else 0
         self.scan_button.setEnabled(not busy and self.source is not None)
         self.act_scan.setEnabled(self.scan_button.isEnabled())
-        can_organize = not busy and plan is not None and todo > 0
+        can_organize = not busy and plan is not None and todo > 0 and not self._plan_pending()
         self.organize_button.setEnabled(can_organize)
         self.act_organize.setEnabled(can_organize)
         verb = self.tr("Mover") if self.rules.mode() is Mode.MOVE else self.tr("Organizar")
@@ -951,7 +967,9 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
             self._task.cancel.set()
-        self.pool.waitForDone(30_000)
+        # Sem prazo: o cancelamento vale entre arquivos, e um vídeo grande indo para o NAS
+        # pode levar mais de 30 s; sair antes deixaria a cópia pela metade.
+        self.pool.waitForDone()
         self._save_settings()
         self.thumbnails.stop()
         super().closeEvent(event)

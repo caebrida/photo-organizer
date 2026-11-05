@@ -157,6 +157,9 @@ def test_full_flow_scan_review_organize(qtbot, qapp, tmp_path, monkeypatch, mode
 
     # Mudar a regra recalcula o plano sem novo escaneamento.
     window.rules.pattern.setText("aaaa > month")
+    assert not window.organize_button.isEnabled()  # o plano velho não pode ser executado
+    window.start_organize()  # nem pelo atalho: nada acontece até o plano novo chegar
+    assert window._task is None
     qtbot.waitUntil(
         lambda: window.plan is not None and any("Abril" in str(i.dest) for i in window.plan.items),
         timeout=10_000,
@@ -291,3 +294,14 @@ def test_metadata_service_reports_sidecar_tags(qtbot, tmp_path):
         assert blocker.args[1]["Tags"] == ["praia", "verão"]
     finally:
         service.stop()
+
+
+@requires_exiftool
+def test_write_tags_skips_photos_moved_after_analysis(tmp_path):
+    from photo_organizer.ui.workers import Task, write_tags_job
+
+    gone = MediaFile(tmp_path / "movida.jpg", FileKind.JPEG)  # saiu da pasta com "Mover"
+    summary = write_tags_job(Task(write_tags_job), [(gone, ["praia"])])
+    assert summary.written == 0
+    assert [path for path, _ in summary.errors] == [gone.path]
+    assert not (tmp_path / "movida.jpg.xmp").exists()  # nenhum sidecar sozinho

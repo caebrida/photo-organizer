@@ -146,8 +146,9 @@ class Inspector(QFrame):
             (self.tr("Fica onde está") if item.skip else self.tr("Destino")).upper()
         )
         self.dest.setText(breakable(item.dest))
-        if item.duplicate:
-            self.dest.setToolTip(self.tr("Duplicada potencial: vai para a pasta de validação."))
+        self.dest.setToolTip(
+            self.tr("Duplicada potencial: vai para a pasta de validação.") if item.duplicate else ""
+        )
 
         self.preview.setPixmap(QPixmap())
         self.preview.setText(self.tr("Vídeo") if media.kind is FileKind.VIDEO else "")

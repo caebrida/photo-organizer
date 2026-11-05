@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import Counter, deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -160,10 +160,15 @@ def execute_job(task: Task, plan: Plan, mode: Mode, report: Path, lang: str) -> 
         if done % 10 == 0 or done == total:
             task.signals.progress.emit(done, total, "organize")
 
-    # O próprio executor confere o cancelamento entre arquivos e marca o resto.
-    for r in execute(plan, mode, progress=progress, cancel=task.cancel):
-        results.append(r)
-    write_report(report, results, mode, lang)
+    def collect() -> Iterator[ItemResult]:
+        # O próprio executor confere o cancelamento entre arquivos e marca o resto.
+        for r in execute(plan, mode, progress=progress, cancel=task.cancel):
+            results.append(r)
+            yield r
+
+    # O relatório é escrito arquivo a arquivo: se o programa cair no meio, o CSV mostra o
+    # que já foi movido. Se ele não puder ser criado, nada é tocado.
+    write_report(report, collect(), mode, lang)
     counts = Counter(r.status for r in results)
     errors = [r for r in results if r.status in (Status.FAILED, Status.PARTIAL)]
     return ExecutionSummary(counts, report, counts[Status.CANCELLED] > 0, errors)
@@ -190,18 +195,24 @@ def tag_job(task: Task, folder: Path, lang: str, hemisphere: str) -> list[TagIte
     tagger = Tagger(lang, hemisphere)  # carrega os modelos (e falha cedo se faltarem)
     items: list[TagItem] = []
     with MetadataReader() as reader:
-        dated = list(read_dates(reader, files, batch_size=200))
-        current = existing_tags(reader, files)
-        for i, (media, date) in enumerate(dated, 1):
-            try:
-                img = load_image(media.path, media.kind, PREVIEW, reader)
-            except OSError:
-                log.warning("Não foi possível ler %s", media.path, exc_info=True)
-                img = None
-            suggested = tagger.tags(img, date.value) if img is not None else []
-            items.append(TagItem(media, date, suggested, current[media.path]))
-            task.report(i, len(dated), "tags")
+        # Em lotes: com 100 mil fotos a leitura dos metadados mostra progresso e cancela.
+        for start in range(0, len(files), 200):
+            chunk = files[start : start + 200]
+            current = existing_tags(reader, chunk)
+            for media, date in read_dates(reader, chunk, batch_size=200):
+                suggested = _suggest(tagger, reader, media, date)
+                items.append(TagItem(media, date, suggested, current[media.path]))
+                task.report(len(items), len(files), "tags")
     return items
+
+
+def _suggest(tagger: Tagger, reader: MetadataReader, media: MediaFile, date: FileDate) -> list[str]:
+    try:
+        img = load_image(media.path, media.kind, PREVIEW, reader)
+        return tagger.tags(img, date.value) if img is not None else []
+    except Exception:  # uma foto ruim (ex.: prévia corrompida) não derruba a análise toda
+        log.warning("Não foi possível analisar %s", media.path, exc_info=True)
+        return []
 
 
 @dataclass(slots=True)
@@ -211,11 +222,16 @@ class TagWriteSummary:
 
 
 def write_tags_job(task: Task, items: list[tuple[MediaFile, list[str]]]) -> TagWriteSummary:
+    """``items``: só as tags novas de cada foto (TaggingView.pending já tirou as que ela tem)."""
     written, errors = 0, []
     with MetadataReader() as reader:
         for i, (media, tags) in enumerate(items, 1):
+            if not media.path.exists():  # movida depois da análise: o sidecar ficaria sozinho
+                errors.append((media.path, "O arquivo não está mais nesta pasta."))
+                task.report(i, len(items), "write_tags")
+                continue
             try:
-                write_tags(reader, media, tags)
+                write_tags(reader, media, tags, current=[])
                 written += 1
             except OSError as exc:
                 errors.append((media.path, str(exc)))
@@ -254,6 +270,7 @@ class ThumbnailService(QObject):
         super().__init__(parent)
         self._queue: deque[tuple[str, str, FileKind, int, Path | None]] = deque()
         self._pending: set[tuple[str, str, int]] = set()
+        self._failed: set[tuple[str, str, int]] = set()  # ilegíveis: não tenta a cada repintura
         self._cond = threading.Condition()
         self._stop = False
         self._thread = threading.Thread(target=self._run, name="miniaturas", daemon=True)
@@ -276,7 +293,7 @@ class ThumbnailService(QObject):
     def _push(self, request: tuple[str, str, FileKind, int, Path | None]) -> None:
         key = (request[0], request[1], request[3])
         with self._cond:
-            if key in self._pending:
+            if key in self._pending or key in self._failed:
                 return
             self._pending.add(key)
             self._queue.append(request)
@@ -308,13 +325,20 @@ class ThumbnailService(QObject):
                         self.metadataReady.emit(path, meta)
                     else:
                         image = self._thumbnail(Path(path), kind, size, reader)
-                        if image is not None:
+                        if image is None:
+                            self._fail(what, path, size)
+                        else:
                             self.thumbnailReady.emit(path, image, size)
                 except Exception:
                     log.exception("Falha ao gerar miniatura de %s", path)
+                    self._fail(what, path, size)
         finally:
             if reader is not None:
                 reader.__exit__(None, None, None)
+
+    def _fail(self, what: str, path: str, size: int) -> None:
+        with self._cond:
+            self._failed.add((what, path, size))
 
     def _thumbnail(
         self, path: Path, kind: FileKind, size: int, reader: MetadataReader | None

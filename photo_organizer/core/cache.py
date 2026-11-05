@@ -5,10 +5,11 @@ A chave é caminho + tamanho + data de modificação: se o arquivo mudar, o hash
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
+
+from photo_organizer.core.scanner import path_key
 
 
 class HashCache:
@@ -38,7 +39,7 @@ class HashCache:
             return None
         row = self._db.execute(
             "SELECT value FROM hashes WHERE path = ? AND method = ? AND size = ? AND mtime_ns = ?",
-            (_key(path), method, st.st_size, st.st_mtime_ns),
+            (path_key(path), method, st.st_size, st.st_mtime_ns),
         ).fetchone()
         return row[0] if row else None
 
@@ -49,10 +50,6 @@ class HashCache:
                 st = Path(path).stat()
             except OSError:
                 continue
-            rows.append((_key(path), method, st.st_size, st.st_mtime_ns, value))
+            rows.append((path_key(path), method, st.st_size, st.st_mtime_ns, value))
         self._db.executemany("INSERT OR REPLACE INTO hashes VALUES (?, ?, ?, ?, ?)", rows)
         self._db.commit()
-
-
-def _key(path: Path) -> str:
-    return os.path.normcase(os.path.abspath(path))  # noqa: PTH100 (resolve() acessa o disco)

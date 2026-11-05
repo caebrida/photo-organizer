@@ -39,7 +39,7 @@ class ObjectDetector:
     def detect(self, bgr: np.ndarray, min_score: float) -> list[Detection]:
         h, w = bgr.shape[:2]
         ratio = min(SIZE / h, SIZE / w)
-        rh, rw = int(h * ratio), int(w * ratio)
+        rh, rw = max(1, int(h * ratio)), max(1, int(w * ratio))  # 3000×2 não vira 0 px
         blob = np.full((SIZE, SIZE, 3), 114, np.float32)
         blob[:rh, :rw] = cv2.resize(bgr, (rw, rh), interpolation=cv2.INTER_LINEAR)
         self.net.setInput(blob.transpose(2, 0, 1)[None].copy())

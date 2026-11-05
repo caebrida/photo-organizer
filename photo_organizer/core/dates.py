@@ -13,16 +13,14 @@ pasta. A única conversão de fuso é a do ``QuickTime:CreateDate``, que por nor
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
 
 from photo_organizer.core.metadata import MetadataReader
-from photo_organizer.core.scanner import MediaFile
+from photo_organizer.core.scanner import MediaFile, path_key
 
 
 class DateSource(StrEnum):
@@ -133,13 +131,9 @@ def _read_batch(
     sidecars = [f.sidecar for f in batch if f.sidecar is not None]
     sidecar_meta = _by_path(reader.read(sidecars, SIDECAR_TAGS)) if sidecars else {}
     for f in batch:
-        side = sidecar_meta.get(_key(f.sidecar)) if f.sidecar else None
-        yield f, resolve_date(file_meta.get(_key(f.path), {}), side)
-
-
-def _key(path: str | Path) -> str:
-    return os.path.normcase(os.path.normpath(path))
+        side = sidecar_meta.get(path_key(f.sidecar)) if f.sidecar else None
+        yield f, resolve_date(file_meta.get(path_key(f.path), {}), side)
 
 
 def _by_path(results: list[dict]) -> dict[str, dict]:
-    return {_key(r["SourceFile"]): r for r in results if "SourceFile" in r}
+    return {path_key(r["SourceFile"]): r for r in results if "SourceFile" in r}

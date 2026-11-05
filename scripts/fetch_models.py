@@ -30,9 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "photo_organizer" / "resources" / "models"
 CACHE = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "photo-organizer" / "hf"
 
-YOLOX = (
-    "https://huggingface.co/opencv/object_detection_yolox/resolve/main/"
-    "object_detection_yolox_2022nov.onnx",
+YOLOX = (  # commit fixo: se o repositório mudar, o download continua batendo com o hash
+    "https://huggingface.co/opencv/object_detection_yolox/resolve/"
+    "78c368f74ce73ee28fc7a1be418a598c71b58b52/object_detection_yolox_2022nov.onnx",
     "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063",
 )
 SIGLIP = "google/siglip2-base-patch16-224"

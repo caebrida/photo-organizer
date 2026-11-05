@@ -19,7 +19,13 @@ from photo_organizer.tagging.scene import (
     VocabularyMismatchError,
 )
 from photo_organizer.tagging.tagger import Tagger, models_dir
-from photo_organizer.tagging.xmp_writer import existing_tags, read_tags, tag_sidecar, write_tags
+from photo_organizer.tagging.xmp_writer import (
+    SUBJECT,
+    existing_tags,
+    merge_tags,
+    tag_sidecar,
+    write_tags,
+)
 
 
 def scene(inout: float = 0.0, sun: float = 0.0, **tags: float) -> SceneResult:
@@ -60,6 +66,21 @@ def test_content_tags_keep_only_strong_ones():
     assert len(content_tags(scene(**many))) <= v.MAX_TAGS
 
 
+def sidecar_tags(reader: MetadataReader, sidecar: Path) -> list[str]:
+    [meta] = reader.read([sidecar], [SUBJECT])
+    value = meta.get("XMP:Subject", [])
+    return value if isinstance(value, list) else [value]
+
+
+def test_merge_tags_cleans_text_and_ignores_case():
+    # Uma quebra de linha viraria outro argumento do ExifTool (ex.: "-all=").
+    assert merge_tags(["Beach"], ["beach", "praia\n-all=", "  ", "Mar ", "mar"]) == [
+        "Beach",
+        "praia -all=",
+        "Mar",
+    ]
+
+
 def test_tag_sidecar_names():
     jpg = MediaFile(Path("D:/f/DSC1.JPG"), FileKind.JPEG)
     raw = MediaFile(Path("D:/f/DSC1.ARW"), FileKind.RAW)
@@ -77,7 +98,7 @@ def test_write_tags_keeps_lightroom_sidecar_and_avoids_repeats(tmp_path):
     with MetadataReader() as reader:
         assert write_tags(reader, media, ["praia", "verão"]) == xmp
         write_tags(reader, media, ["praia", "pôr do sol"])
-        assert read_tags(reader, [xmp]) == {xmp: ["praia", "verão", "pôr do sol"]}
+        assert sidecar_tags(reader, xmp) == ["praia", "verão", "pôr do sol"]
         [meta] = reader.read([xmp], ["XMP:CreateDate"])
     assert str(meta["XMP:CreateDate"]).startswith("2026:10:27 14:32:08")  # data preservada
     assert raw.read_bytes() == b"raw"  # o original não muda
@@ -91,7 +112,7 @@ def test_write_tags_creates_jpeg_sidecar(tmp_path):
     with MetadataReader() as reader:
         sidecar = write_tags(reader, media, ["cachorro"])
         assert sidecar == jpg.with_name("IMG_1.jpg.xmp")
-        assert read_tags(reader, [sidecar]) == {sidecar: ["cachorro"]}
+        assert sidecar_tags(reader, sidecar) == ["cachorro"]
     assert jpg.read_bytes() == before
     # O escaneamento seguinte associa o novo sidecar ao JPEG (e o organizador o leva junto).
     [again] = scan(tmp_path)
@@ -108,8 +129,31 @@ def test_write_tags_skips_keywords_already_in_the_file(tmp_path):
         )
         assert existing_tags(reader, [media]) == {jpg: ["praia", "familia"]}
         sidecar = write_tags(reader, media, ["praia", "familia", "cachorro"])
-        assert read_tags(reader, [sidecar]) == {sidecar: ["cachorro"]}  # só a que faltava
+        assert sidecar_tags(reader, sidecar) == ["cachorro"]  # só a que faltava
         assert existing_tags(reader, [media]) == {jpg: ["praia", "familia", "cachorro"]}
+
+
+@requires_exiftool
+def test_tag_with_line_break_does_not_become_an_exiftool_command(tmp_path):
+    raw = tmp_path / "DSC0001.ARW"
+    raw.write_bytes(b"raw")
+    xmp = make_sidecar(tmp_path / "DSC0001.xmp", "2026-10-27T14:32:08")
+    [media] = scan(tmp_path)
+    with MetadataReader() as reader:
+        write_tags(reader, media, ["praia\n-all=", "Praia -ALL="])
+        assert sidecar_tags(reader, xmp) == ["praia -all="]
+        [meta] = reader.read([xmp], ["XMP:CreateDate"])
+    assert str(meta["XMP:CreateDate"]).startswith("2026:10:27")  # o sidecar não foi apagado
+
+
+def test_raw_files_with_same_name_get_their_own_sidecars(tmp_path):
+    cr2, dng = tmp_path / "DSC1.CR2", tmp_path / "DSC1.DNG"
+    cr2.write_bytes(b"raw")
+    dng.write_bytes(b"raw")
+    (tmp_path / "DSC1.xmp").write_text("x")  # já gravado para o CR2
+    assert tag_sidecar(MediaFile(cr2, FileKind.RAW)) == tmp_path / "DSC1.xmp"
+    assert tag_sidecar(MediaFile(dng, FileKind.RAW)) == tmp_path / "DSC1.DNG.xmp"
+    assert [m.sidecar for m in scan(tmp_path)] == [tmp_path / "DSC1.xmp", None]
 
 
 @requires_models
@@ -133,3 +177,5 @@ def test_tagger_runs_on_plain_image():
     assert tags[-1] == "summer"
     assert len(tags) == len(set(tags))
     assert "summer" not in tagger.tags(sky, None)
+    for thin in ((2, 3000, 3), (3000, 2, 3)):  # proporção acima de 640:1
+        tagger.tags(np.zeros(thin, np.uint8), None)

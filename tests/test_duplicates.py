@@ -85,6 +85,29 @@ def test_finds_copies_resized_and_stripped_versions(tmp_path):
 
 
 @requires_exiftool
+def test_keeps_the_dated_original_even_if_the_copy_is_older(tmp_path):
+    base = photo(5)
+    save(tmp_path / "camera.jpg", base, date="2025:04:20 07:16:07", mtime=1_700_000_000)
+    whats = cv2.resize(base, (800, 533), interpolation=cv2.INTER_AREA)
+    save(tmp_path / "whatsapp.jpg", whats, 60, mtime=1_600_000_000)  # sem EXIF, mais antiga
+    assert names(detect(tmp_path)) == {("camera.jpg", frozenset({"whatsapp.jpg"}))}
+
+
+def test_undated_copies_do_not_join_photos_from_different_moments():
+    def entry(name, second, bits):
+        date = datetime(2026, 1, 1, 10, 0, second) if second is not None else None
+        return _Entry(MediaFile(Path(name), FileKind.JPEG), date, bits)
+
+    entries = [
+        entry("rajada1.jpg", 1, 0),  # 10:00:01
+        entry("rajada2.jpg", 2, 0b111111111),  # 10:00:02, 9 bits diferente
+        entry("copia1.jpg", None, 0b000000111),  # mais perto da rajada1
+        entry("copia2.jpg", None, 0b000111111),  # mais perto da rajada2; 3 bits da copia1
+    ]
+    assert sorted(group_similar(entries)) == [[0, 2], [1, 3]]
+
+
+@requires_exiftool
 def test_different_dates_are_never_duplicates(tmp_path):
     save(tmp_path / "um.jpg", photo(3), date="2025:01:01 10:00:00")
     save(tmp_path / "dois.jpg", photo(3), date="2025:01:01 10:00:01")

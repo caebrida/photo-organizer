@@ -89,9 +89,8 @@ class LibraryModel(QAbstractListModel):
     def file_count(self) -> int:
         return len(self._row_of)
 
-    def counts(self) -> dict[Filter, int]:
-        items = self.plan.items if self.plan else []
-        return {f: sum(1 for i in items if _matches(i, f)) for f in Filter}
+    def row_of(self, path: object) -> int | None:  # Path do arquivo
+        return self._row_of.get(str(path))
 
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:  # noqa: B008, N802
         return 0 if parent.isValid() else len(self._rows)

@@ -19,7 +19,6 @@ Em cada grupo fica o arquivo mais antigo (data de modificação); os demais são
 from __future__ import annotations
 
 import base64
-import os
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -34,7 +33,7 @@ from photo_organizer.core.cache import HashCache
 from photo_organizer.core.dates import FileDate
 from photo_organizer.core.executor import hash_file
 from photo_organizer.core.metadata import MetadataReader
-from photo_organizer.core.scanner import FileKind, MediaFile
+from photo_organizer.core.scanner import FileKind, MediaFile, path_key
 
 THRESHOLD = 6
 PHASH = "phash"
@@ -75,7 +74,8 @@ def find_duplicates(
         same_kind = [e for e in entries if e.media.kind is kind]
         groups += [[same_kind[i].media for i in g] for g in group_similar(same_kind, threshold)]
     groups += _identical_videos([m for m, _ in files if m.kind is FileKind.VIDEO], cache)
-    return [_keep_oldest(g) for g in groups]
+    dated = {m.path for m, d in files if d.value is not None}
+    return [_keep_best(g, dated) for g in groups]
 
 
 def duplicate_paths(groups: Sequence[DuplicateGroup]) -> set[Path]:
@@ -161,10 +161,10 @@ def _hash_raw_previews(paths: list[Path], reader: MetadataReader) -> dict[Path, 
     for tag in RAW_PREVIEW_TAGS:  # uma tag por vez: não transfere prévias grandes à toa
         if not missing:
             break
-        by_path = {_key(r["SourceFile"]): r for r in reader.read(missing, [tag], ["-b"])}
+        by_path = {path_key(r["SourceFile"]): r for r in reader.read(missing, [tag], ["-b"])}
         still = []
         for p in missing:
-            h = _decode_b64_hash(_any_tag(by_path.get(_key(p), {}), tag))
+            h = _decode_b64_hash(_any_tag(by_path.get(path_key(p), {}), tag))
             if h is None:
                 still.append(p)
             else:
@@ -232,16 +232,22 @@ def group_similar(entries: Sequence[_Entry], threshold: int = THRESHOLD) -> list
                 if _same_moment(entries[a].date, entries[int(b)].date):
                     union(a, int(b))
 
-    # Sem data: liga à datada mais parecida e às outras sem data parecidas.
+    # Sem data: liga à datada mais parecida. As que não acharam datada se ligam entre si;
+    # ligar também as que acharam juntaria fotos de momentos diferentes (rajada A + cópia
+    # de A ~ cópia de C + rajada C viraria um grupo só).
     dated = np.array([i for i in range(n) if entries[i].date is not None], dtype=np.intp)
-    und = np.array(undated, dtype=np.intp)
-    for k, u in enumerate(undated):
+    alone: list[int] = []
+    for u in undated:
         if dated.size:
             dist = np.bitwise_count(hashes[dated] ^ hashes[u])
             j = int(dist.argmin())
             if dist[j] <= threshold:
                 union(u, int(dated[j]))
-        later = und[k + 1 :]
+                continue
+        alone.append(u)
+    rest = np.array(alone, dtype=np.intp)
+    for k, u in enumerate(alone):
+        later = rest[k + 1 :]
         if later.size:
             for b in later[np.bitwise_count(hashes[later] ^ hashes[u]) <= threshold]:
                 union(u, int(b))
@@ -293,17 +299,17 @@ def _identical_videos(
     return groups
 
 
-def _keep_oldest(group: list[MediaFile]) -> DuplicateGroup:
-    def age(m: MediaFile) -> tuple[float, str]:
+def _keep_best(group: list[MediaFile], dated: set[Path]) -> DuplicateGroup:
+    """Fica o original: com data (a cópia do WhatsApp perde o EXIF), depois o maior
+    arquivo (mais resolução), depois o mais antigo."""
+
+    def rank(m: MediaFile) -> tuple[bool, int, float, str]:
         try:
-            mtime = m.path.stat().st_mtime
+            st = m.path.stat()
+            size, mtime = st.st_size, st.st_mtime
         except OSError:
-            mtime = float("inf")
-        return mtime, str(m.path).lower()
+            size, mtime = 0, float("inf")
+        return m.path not in dated, -size, mtime, str(m.path).lower()
 
-    ordered = sorted(group, key=age)
+    ordered = sorted(group, key=rank)
     return DuplicateGroup(ordered[0], tuple(ordered[1:]))
-
-
-def _key(path: str | Path) -> str:
-    return os.path.normcase(os.path.abspath(path))  # noqa: PTH100 (resolve() acessa o disco)

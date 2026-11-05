@@ -50,6 +50,11 @@ def kind_of(path: str | Path) -> FileKind | None:
     return EXTENSIONS.get(PurePath(path).suffix.lower())
 
 
+def path_key(path: str | Path) -> str:
+    """Chave para comparar caminhos como o Windows (sem maiúsculas), sem acessar o disco."""
+    return os.path.normcase(os.path.abspath(path))  # noqa: PTH100 (resolve() acessa o disco)
+
+
 def scan(
     root: str | Path,
     kinds: Iterable[FileKind] | None = None,
