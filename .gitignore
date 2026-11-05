@@ -24,6 +24,7 @@ comparacao_tags/
 
 # Notas e ferramentas locais (fora do repositório público)
 *.md
+!/README.md
 design/
 graphify-out/
 .claude/
