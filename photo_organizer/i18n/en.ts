@@ -924,13 +924,13 @@ They go into the .xmp sidecars, added to the existing ones; the original files a
     </message>
     <message>
         <location filename="../ui/rules_panel.py" line="187" />
-        <source>5  Data no nome do arquivo (IMG_20261027…)</source>
-        <translation>5  Date in the file name (IMG_20261027…)</translation>
+        <source>5  Data no nome do arquivo</source>
+        <translation>5  Date in the file name</translation>
     </message>
     <message>
         <location filename="../ui/rules_panel.py" line="190" />
-        <source>Só para arquivos sem nenhuma das datas acima. Sem data no nome, vão para a pasta de arquivos sem data.</source>
-        <translation>Only for files with none of the dates above. With no date in the name either, they go to the undated folder.</translation>
+        <source>Ex.: IMG_20261027_143208.jpg. Só para arquivos sem nenhuma das datas acima; sem data no nome, vão para a pasta de arquivos sem data.</source>
+        <translation>E.g. IMG_20261027_143208.jpg. Only for files with none of the dates above; with no date in the name either, they go to the undated folder.</translation>
     </message>
     <message>
         <location filename="../ui/rules_panel.py" line="285" />

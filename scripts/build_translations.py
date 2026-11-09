@@ -255,8 +255,8 @@ EN = {
     "Nome {n}": "Name {n}",
     "Mandar os desmarcados para a Lixeira": "Send unchecked files to the Recycle Bin",
     "Só ao mover: os arquivos que você desmarcou na lista saem da origem e vão para a Lixeira do Windows. Em pendrive ou rede não há Lixeira e eles ficam.": "Only when moving: the files you unchecked in the list leave the source and go to the Windows Recycle Bin. USB drives and network folders have no Recycle Bin, so they stay.",
-    "5  Data no nome do arquivo (IMG_20261027…)": "5  Date in the file name (IMG_20261027…)",
-    "Só para arquivos sem nenhuma das datas acima. Sem data no nome, vão para a pasta de arquivos sem data.": "Only for files with none of the dates above. With no date in the name either, they go to the undated folder.",
+    "5  Data no nome do arquivo": "5  Date in the file name",
+    "Ex.: IMG_20261027_143208.jpg. Só para arquivos sem nenhuma das datas acima; sem data no nome, vão para a pasta de arquivos sem data.": "E.g. IMG_20261027_143208.jpg. Only for files with none of the dates above; with no date in the name either, they go to the undated folder.",
 }
 
 

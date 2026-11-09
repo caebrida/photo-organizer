@@ -184,11 +184,11 @@ class RulesPanel(QScrollArea):
             row = QLabel(f"<span style='color:#F5A623'>{i}</span>&nbsp;&nbsp;{text}")
             row.setObjectName("PriorityRow")
             layout.addWidget(row)
-        self.name_dates = QCheckBox(self.tr("5  Data no nome do arquivo (IMG_20261027…)"))
+        self.name_dates = QCheckBox(self.tr("5  Data no nome do arquivo"))
         self.name_dates.setChecked(True)
         self.name_dates.setToolTip(
-            self.tr("Só para arquivos sem nenhuma das datas acima. Sem data no nome, vão para "
-                    "a pasta de arquivos sem data.")
+            self.tr("Ex.: IMG_20261027_143208.jpg. Só para arquivos sem nenhuma das datas acima; "
+                    "sem data no nome, vão para a pasta de arquivos sem data.")
         )  # fmt: skip
         self.name_dates.toggled.connect(self._on_changed)
         layout.addWidget(self.name_dates)

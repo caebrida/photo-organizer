@@ -10,6 +10,8 @@ import os
 
 # Testes de interface sem abrir janelas (precisa vir antes de criar o QApplication).
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Sem isto o offscreen não acha fontes e as larguras de texto não são as reais.
+os.environ.setdefault("QT_QPA_FONTDIR", os.environ.get("WINDIR", "C:/Windows") + "/Fonts")
 
 import struct
 import subprocess

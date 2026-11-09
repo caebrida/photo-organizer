@@ -417,3 +417,15 @@ def test_inspector_plays_videos_and_releases_the_file(qtbot, tmp_path):
     inspector.show_item(photo)  # trocar de seleção solta o vídeo (senão o Mover falha)
     assert inspector._player.source().isEmpty()
     assert not inspector.video_bar.isVisible()
+
+
+@pytest.mark.parametrize("lang", ["pt", "en"])
+def test_rules_panel_content_fits_its_width(qtbot, qapp, tmp_path, lang):
+    settings = QSettings(str(tmp_path / "s.ini"), QSettings.Format.IniFormat)
+    settings.setValue("lang", lang)
+    window = create_window(qapp, settings)
+    qtbot.addWidget(window)
+    window.resize(1300, 700)  # baixa o bastante para a barra de rolagem aparecer
+    window.show()
+    rules = window.rules
+    assert rules.widget().minimumSizeHint().width() <= rules.viewport().width()
