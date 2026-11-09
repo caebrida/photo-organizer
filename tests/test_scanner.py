@@ -18,6 +18,7 @@ def by_name(files: list[MediaFile]) -> dict[str, MediaFile]:
 def test_kind_of_is_case_insensitive():
     assert kind_of("a.JPG") is FileKind.JPEG
     assert kind_of("a.jpeg") is FileKind.JPEG
+    assert kind_of("IMG_0001.HEIC") is FileKind.JPEG  # foto comum, não RAW
     assert kind_of("a.Cr3") is FileKind.RAW
     assert kind_of("a.dng") is FileKind.RAW
     assert kind_of("a.MOV") is FileKind.VIDEO

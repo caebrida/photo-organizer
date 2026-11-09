@@ -1,7 +1,8 @@
 """Decodificação de imagens para miniaturas, prévias e tags.
 
 RAW nunca é decodificado: usa-se o JPEG embutido (miniatura, prévia ou JpgFromRaw),
-extraído pelo ExifTool.
+extraído pelo ExifTool. HEIC (iPhone) é decodificado pelo libheif (pacote pi-heif), que
+já aplica a rotação gravada no arquivo.
 """
 
 from __future__ import annotations
@@ -30,7 +31,32 @@ def load_image(
     if kind is FileKind.RAW:
         assert reader is not None
         return raw_preview(path, size, reader)
+    if is_heic(path):
+        return heic_image(path, size)
     return decode(path.read_bytes(), size)
+
+
+def is_heic(path: Path) -> bool:
+    return path.suffix.lower() == ".heic"
+
+
+def heic_image(path: Path, size: int = 0) -> np.ndarray | None:
+    """HEIC em BGR, reduzida para o lado maior ≈ ``size`` (0 = tamanho original)."""
+    import pi_heif  # só carrega a DLL do libheif quando aparece um HEIC
+
+    try:
+        # shortcut: decodifica a foto inteira (~12 MP) mesmo para miniatura; a miniatura
+        # embutida no HEIC seria mais rápida, se a grade ficar lenta com milhares de HEIC.
+        heif = pi_heif.open_heif(path.read_bytes(), convert_hdr_to_8bit=True)
+        rgb = np.asarray(heif)
+    except (OSError, ValueError, RuntimeError):  # corrompido ou sem imagem
+        return None
+    img = cv2.cvtColor(rgb, cv2.COLOR_RGBA2BGR if heif.mode == "RGBA" else cv2.COLOR_RGB2BGR)
+    h, w = img.shape[:2]
+    if size and max(h, w) > 2 * size:
+        scale = 2 * size / max(h, w)  # folga para quem ainda vai recortar ou reduzir
+        img = cv2.resize(img, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+    return img
 
 
 def decode(data: bytes, size: int) -> np.ndarray | None:

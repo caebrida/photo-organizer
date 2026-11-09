@@ -60,7 +60,7 @@ Supported types:
 
 | Type | Extensions | Goes to |
 |---|---|---|
-| Photo | `.jpg`, `.jpeg` | the date folder |
+| Photo | `.jpg`, `.jpeg`, `.heic` (iPhone) | the date folder |
 | RAW | `.arw`, `.cr2`, `.cr3`, `.crw`, `.dng` | a `RAW` subfolder |
 | Video | `.mp4`, `.mov`, `.avi` | a `Video` subfolder |
 
@@ -246,6 +246,8 @@ The executable bundles these components, each under its own license:
 | [ExifTool](https://exiftool.org/) | reading metadata and writing XMP | Artistic License or GPL |
 | [Qt for Python (PySide6)](https://doc.qt.io/qtforpython/) | interface | LGPL v3 |
 | [FFmpeg](https://ffmpeg.org/) (bundled with Qt Multimedia) | video playback | LGPL v2.1+ |
+| [libheif](https://github.com/strukturag/libheif) and libde265, via [pi-heif](https://github.com/bigcat88/pillow_heif) | reading iPhone HEIC photos | LGPL v3 (pi-heif: BSD-3) |
+| [Pillow](https://python-pillow.org/) | required by pi-heif | MIT-CMU |
 | [OpenCV](https://opencv.org/) | images and running the models | Apache 2.0 |
 | [SigLIP 2](https://huggingface.co/google/siglip2-base-patch16-224) (Google) | scene and content tags | Apache 2.0 |
 | [YOLOX-s](https://huggingface.co/opencv/object_detection_yolox) (OpenCV Model Zoo) | people detection | Apache 2.0 |

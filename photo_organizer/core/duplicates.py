@@ -3,7 +3,7 @@
 Fotos: hash perceptual (pHash, 64 bits) — pega cópias idênticas e versões
 redimensionadas ou reexportadas. Duas fotos são duplicadas quando:
 
-- são do mesmo tipo (JPEG com JPEG, RAW com RAW: o par RAW+JPEG da câmera nunca é
+- são do mesmo tipo (JPEG ou HEIC entre si, RAW com RAW: o par RAW+JPEG da câmera nunca é
   duplicada);
 - os hashes diferem em até ``threshold`` bits;
 - foram tiradas no mesmo instante (mesmo segundo e, quando as duas têm, mesmos
@@ -35,6 +35,7 @@ import numpy as np
 from photo_organizer.core.cache import HashCache
 from photo_organizer.core.dates import FileDate
 from photo_organizer.core.executor import hash_file
+from photo_organizer.core.images import heic_image, is_heic
 from photo_organizer.core.metadata import MetadataReader
 from photo_organizer.core.planner import DestAction
 from photo_organizer.core.scanner import FileKind, MediaFile, path_key
@@ -252,6 +253,12 @@ def phash(gray: np.ndarray) -> np.ndarray:
 
 
 def _hash_jpeg_file(path: Path) -> int | None:
+    if is_heic(path):
+        img = heic_image(path, 256)
+        if img is None:
+            return None
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        return int.from_bytes(phash(_trim_dark_borders(gray)).tobytes(), "big")
     try:
         data = path.read_bytes()  # np.fromfile/imread falham com acentos no Windows
     except OSError:

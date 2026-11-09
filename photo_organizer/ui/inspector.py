@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from photo_organizer.core.dates import DateSource
-from photo_organizer.core.images import PREVIEW
+from photo_organizer.core.images import PREVIEW, is_heic
 from photo_organizer.core.planner import PlanItem, Skip
 from photo_organizer.core.scanner import FileKind
 from photo_organizer.ui import icons, theme
@@ -162,7 +162,8 @@ class Inspector(QFrame):
             size_mb = media.path.stat().st_size / 1_000_000
         except OSError:
             size_mb = 0.0  # QLocale.toString(int, "f", 1) não existe
-        kind = {FileKind.RAW: "RAW", FileKind.VIDEO: self.tr("Vídeo"), FileKind.JPEG: "JPEG"}
+        photo = "HEIC" if is_heic(media.path) else "JPEG"
+        kind = {FileKind.RAW: "RAW", FileKind.VIDEO: self.tr("Vídeo"), FileKind.JPEG: photo}
         mb = self.number_locale.toString(size_mb, "f", 1)
         self.badge.setText(f"{kind[media.kind]} · {mb} MB")
 

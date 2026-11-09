@@ -29,7 +29,7 @@ from photo_organizer.ui.theme import breakable
 from photo_organizer.ui.workers import PlanOptions
 
 # Extensões exibidas, na ordem da tela (.jpeg conta como jpg).
-EXTENSION_ORDER = ["jpg", "arw", "cr2", "cr3", "crw", "dng", "mp4", "mov", "avi"]
+EXTENSION_ORDER = ["jpg", "heic", "arw", "cr2", "cr3", "crw", "dng", "mp4", "mov", "avi"]
 KIND_COLOR = {FileKind.JPEG: "#EDEDED", FileKind.RAW: "#F5A623", FileKind.VIDEO: "#A78BFA"}
 
 

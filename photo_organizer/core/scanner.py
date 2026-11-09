@@ -15,7 +15,7 @@ from pathlib import Path, PurePath
 
 
 class FileKind(StrEnum):
-    JPEG = "jpeg"
+    JPEG = "jpeg"  # foto comum: JPEG ou HEIC (iPhone); vai para a pasta da data
     RAW = "raw"
     VIDEO = "video"
 
@@ -23,6 +23,7 @@ class FileKind(StrEnum):
 EXTENSIONS: dict[str, FileKind] = {
     ".jpg": FileKind.JPEG,
     ".jpeg": FileKind.JPEG,
+    ".heic": FileKind.JPEG,
     ".arw": FileKind.RAW,
     ".cr2": FileKind.RAW,
     ".cr3": FileKind.RAW,

@@ -193,7 +193,7 @@
     </message>
     <message>
         <location filename="../ui/inspector.py" line="123" />
-        <location filename="../ui/inspector.py" line="195" />
+        <location filename="../ui/inspector.py" line="196" />
         <source>Destino</source>
         <translation>Destination</translation>
     </message>
@@ -203,67 +203,67 @@
         <translation>Select a file in the grid to see its details.</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="165" />
+        <location filename="../ui/inspector.py" line="166" />
         <source>Vídeo</source>
         <translation>Video</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="171" />
+        <location filename="../ui/inspector.py" line="172" />
         <source>sem data</source>
         <translation>no date</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="176" />
+        <location filename="../ui/inspector.py" line="177" />
         <source>VÍDEO</source>
         <translation>VIDEO</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="177" />
+        <location filename="../ui/inspector.py" line="178" />
         <source>NOME</source>
         <translation>NAME</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="185" />
+        <location filename="../ui/inspector.py" line="186" />
         <source>Fora: vai para a Lixeira ao mover</source>
         <translation>Left out: goes to the Recycle Bin when moving</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="187" />
+        <location filename="../ui/inspector.py" line="188" />
         <source>Fora: fica onde está</source>
         <translation>Left out: stays where it is</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="189" />
+        <location filename="../ui/inspector.py" line="190" />
         <source>Já está no destino</source>
         <translation>Already in the destination</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="191" />
+        <location filename="../ui/inspector.py" line="192" />
         <source>Fica onde está</source>
         <translation>Stays where it is</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="193" />
+        <location filename="../ui/inspector.py" line="194" />
         <source>Substitui a do destino</source>
         <translation>Replaces the destination file</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="200" />
+        <location filename="../ui/inspector.py" line="201" />
         <source>Duplicada potencial: vai para a pasta de validação.</source>
         <translation>Potential duplicate: goes to the review folder.</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="202" />
+        <location filename="../ui/inspector.py" line="203" />
         <source>A foto que está lá vai para a Lixeira.</source>
         <translation>The photo there goes to the Recycle Bin.</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="207" />
+        <location filename="../ui/inspector.py" line="208" />
         <source>Vídeo · clique ▶ para assistir</source>
         <translation>Video · click ▶ to watch</translation>
     </message>
     <message>
-        <location filename="../ui/inspector.py" line="275" />
+        <location filename="../ui/inspector.py" line="276" />
         <source>Não foi possível reproduzir este vídeo.
 {m}</source>
         <translation>Could not play this video.

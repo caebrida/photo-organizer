@@ -232,3 +232,49 @@ def test_finds_photos_already_in_the_destination_and_suggests_the_better_one(tmp
         "grande.jpg": ("pequena.jpg", DestAction.REPLACE),
         "igual.jpg": ("melhor.jpg", DestAction.KEEP),
     }
+
+
+def save_heic(path: Path, img: np.ndarray, date: str | None = None) -> Path:
+    import pillow_heif  # só nos testes: o programa usa o pi-heif, que não grava HEIC
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rgb = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    pillow_heif.from_pillow(rgb).save(path, quality=90)
+    if date:
+        exiftool(f"-EXIF:DateTimeOriginal={date}", path)
+    return path
+
+
+@requires_exiftool
+def test_heic_from_iphone_is_read_dated_and_matched_with_its_jpeg_copy(tmp_path):
+    from photo_organizer.core.images import load_image
+
+    base = photo(7)
+    d = "2025:04:20 07:16:07"
+    heic = save_heic(tmp_path / "IMG_0001.HEIC", base, d)
+    save(tmp_path / "IMG_0001.jpg", cv2.resize(base, (600, 400)), 80, d)  # exportada
+    save_heic(tmp_path / "IMG_0002.HEIC", photo(8), d)  # outra foto, mesmo instante
+
+    img = load_image(heic, FileKind.JPEG, 256, None)
+    assert img is not None and img.shape[:2] == (341, 512)  # 1200×800 reduzida, proporção mantida
+    with MetadataReader() as reader:
+        files = list(read_dates(reader, scan(tmp_path)))
+        assert {f.path.name: d.value for f, d in files}["IMG_0001.HEIC"] == datetime(
+            2025, 4, 20, 7, 16, 7
+        )
+        groups = find_duplicates(files, reader)
+    [group] = groups
+    assert {group.keep.path.name, *(m.path.name for m in group.duplicates)} == {
+        "IMG_0001.HEIC",
+        "IMG_0001.jpg",
+    }
+
+
+def test_unreadable_heic_has_no_image(tmp_path):
+    from photo_organizer.core.images import load_image
+
+    bad = tmp_path / "corrompida.heic"
+    bad.write_bytes(b"\x00\x00\x00\x18ftypheic" + b"lixo" * 10)
+    assert load_image(bad, FileKind.JPEG, 256, None) is None
+    assert duplicates._hash_jpeg_file(bad) is None
