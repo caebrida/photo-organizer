@@ -204,3 +204,31 @@ def test_phash_matches_opencv_contrib():
     ]
     for img in images:
         assert np.array_equal(duplicates.phash(img), cv2.img_hash.pHash(img).reshape(-1))
+
+
+@requires_exiftool
+def test_finds_photos_already_in_the_destination_and_suggests_the_better_one(tmp_path):
+    from photo_organizer.core.duplicates import find_in_destination
+    from photo_organizer.core.planner import DestAction
+
+    src, dst = tmp_path / "origem", tmp_path / "destino"
+    d1, d2 = "2025:04:20 07:16:07", "2025:05:01 10:00:00"
+    base, other = photo(1), photo(2)
+    small = cv2.resize(base, (600, 400), interpolation=cv2.INTER_AREA)
+    save(src / "grande.jpg", base, date=d1)  # a da origem tem mais resolução
+    save(dst / "2025" / "pequena.jpg", small, date=d1)
+    save(src / "igual.jpg", other, date=d2)
+    save(dst / "2025" / "melhor.jpg", other, quality=98, date=d2)  # o destino é maior
+    save(src / "nova.jpg", photo(3), date="2025:06:01 08:00:00")  # não está no destino
+    save(dst / "outra_hora.jpg", base, date="2025:04:20 09:00:00")  # outro momento
+
+    with MetadataReader() as reader:
+        source = list(read_dates(reader, scan(src)))
+        dest = list(read_dates(reader, scan(dst)))
+        groups, matches = find_in_destination(source, dest, reader)
+    assert groups == []
+    got = {m.source.path.name: (m.existing.path.name, m.suggested) for m in matches}
+    assert got == {
+        "grande.jpg": ("pequena.jpg", DestAction.REPLACE),
+        "igual.jpg": ("melhor.jpg", DestAction.KEEP),
+    }

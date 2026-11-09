@@ -6,13 +6,17 @@
 - O sidecar acompanha o arquivo e recebe o mesmo sufixo: ``DSC0001_1.ARW`` +
   ``DSC0001_1.xmp``; ``DSC0001_1.JPG`` + ``DSC0001_1.JPG.xmp``.
 - Um arquivo que já está exatamente no destino é marcado para pular.
+- Desmarcados pelo usuário ficam onde estão; ao mover, podem ir para a Lixeira.
+- Foto que já existe no destino: fica a de lá, vai para duplicadas ou toma o lugar dela
+  (a antiga vai para a Lixeira, no executor).
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path, PurePath
 
 from photo_organizer.core.dates import FileDate
@@ -20,14 +24,30 @@ from photo_organizer.core.rules import RuleSettings, destination_dir
 from photo_organizer.core.scanner import MediaFile, path_key
 
 
+class DestAction(StrEnum):
+    """O que fazer com uma foto da origem que já existe no destino."""
+
+    KEEP = "keep"  # fica a do destino; a da origem não é copiada nem movida
+    DUPLICATE = "duplicate"  # a da origem vai para a pasta de duplicadas
+    REPLACE = "replace"  # a da origem toma o lugar da do destino (a antiga vai para a Lixeira)
+
+
+class Skip(StrEnum):
+    IN_PLACE = "in-place"  # já está no lugar certo
+    KEPT = "kept"  # a foto já existe no destino e fica a de lá
+    EXCLUDED = "excluded"  # desmarcada pelo usuário
+
+
 @dataclass(frozen=True, slots=True)
 class PlanItem:
     media: MediaFile
     date: FileDate
-    dest: Path
+    dest: Path  # pulados: onde o arquivo fica (para KEPT, a foto do destino)
     sidecar_dest: Path | None = None
     duplicate: bool = False
-    skip: bool = False  # já está no lugar certo
+    skip: Skip | None = None
+    replaces: MediaFile | None = None  # foto do destino que vai para a Lixeira
+    trash: bool = False  # desmarcado: ao mover, vai para a Lixeira em vez de ficar
 
 
 @dataclass(slots=True)
@@ -39,24 +59,58 @@ class Plan:
     def to_process(self) -> list[PlanItem]:
         return [i for i in self.items if not i.skip]
 
+    @property
+    def to_trash(self) -> list[PlanItem]:
+        """Desmarcados que vão para a Lixeira (só ao mover; o executor confere o modo)."""
+        return [i for i in self.items if i.trash]
+
 
 def build_plan(
     files: Iterable[tuple[MediaFile, FileDate]],
     root: str | Path,
     settings: RuleSettings,
     duplicates: Collection[Path] = (),
+    excluded: Collection[Path] = (),
+    trash_excluded: bool = False,
+    in_dest: Mapping[Path, tuple[DestAction, MediaFile]] | None = None,
 ) -> Plan:
-    """``duplicates`` são os arquivos que vão para a pasta de duplicadas (fase 3)."""
+    """``duplicates`` vão para a pasta de duplicadas; ``excluded`` ficam onde estão (ou vão
+    para a Lixeira, com ``trash_excluded``); ``in_dest`` diz, para cada foto que já existe
+    no destino, a ação e a foto de lá."""
     root = Path(root)
     dup_keys = {path_key(p) for p in duplicates}
+    out_keys = {path_key(p) for p in excluded}
+    found = {path_key(p): v for p, v in (in_dest or {}).items()}
+    replaced: set[str] = set()
     names = _NameIndex()
     plan = Plan(root)
     for media, date in files:
-        duplicate = path_key(media.path) in dup_keys
-        folder = destination_dir(root, media.kind, date.value, settings, duplicate)
-        if path_key(folder / media.path.name) == path_key(media.path):
+        key = path_key(media.path)
+        if key in out_keys:
             plan.items.append(
-                PlanItem(media, date, media.path, media.sidecar, duplicate, skip=True)
+                PlanItem(media, date, media.path, media.sidecar, skip=Skip.EXCLUDED,
+                         trash=trash_excluded)
+            )  # fmt: skip
+            continue
+        action, existing = found.get(key, (None, None))
+        if action is DestAction.REPLACE and path_key(existing.path) in replaced:
+            action = DestAction.DUPLICATE  # só uma foto da origem toma o lugar de cada uma
+        if action is DestAction.KEEP:
+            plan.items.append(
+                PlanItem(media, date, existing.path, existing.sidecar, skip=Skip.KEPT)
+            )
+            continue
+        if action is DestAction.REPLACE:
+            replaced.add(path_key(existing.path))
+            side = _sidecar_name(media, existing.path.name)
+            side_dest = existing.path.with_name(side) if side else None
+            plan.items.append(PlanItem(media, date, existing.path, side_dest, replaces=existing))
+            continue
+        duplicate = key in dup_keys or action is DestAction.DUPLICATE
+        folder = destination_dir(root, media.kind, date.value, settings, duplicate)
+        if path_key(folder / media.path.name) == key:
+            plan.items.append(
+                PlanItem(media, date, media.path, media.sidecar, duplicate, skip=Skip.IN_PLACE)
             )
             continue
         dest, sidecar_dest = _free_names(folder, media, names)

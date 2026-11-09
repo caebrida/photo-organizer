@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import Counter, deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,13 +21,19 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 from PySide6.QtGui import QImage
 
 from photo_organizer.core.cache import HashCache
-from photo_organizer.core.dates import FileDate, read_dates
-from photo_organizer.core.duplicates import DuplicateGroup, duplicate_paths, find_duplicates
+from photo_organizer.core.dates import FileDate, date_from_name, read_dates
+from photo_organizer.core.duplicates import (
+    DestMatch,
+    DuplicateGroup,
+    duplicate_paths,
+    find_duplicates,
+    find_in_destination,
+)
 from photo_organizer.core.executor import ItemResult, Mode, Status, execute
 from photo_organizer.core.images import PREVIEW, THUMB, load_image
 from photo_organizer.core.metadata import MetadataReader
 from photo_organizer.core.pattern import FolderPattern
-from photo_organizer.core.planner import Plan, build_plan
+from photo_organizer.core.planner import DestAction, Plan, build_plan
 from photo_organizer.core.report import write_report
 from photo_organizer.core.rules import RuleSettings
 from photo_organizer.core.scanner import FileKind, MediaFile, scan
@@ -116,6 +122,42 @@ def scan_job(task: Task, source: Path, exclude: Path | None, cache_path: Path) -
     return ScanResult(Path(source), dated, groups, counts, unreadable)
 
 
+@dataclass(slots=True)
+class DestCheck:
+    """Resultado da busca no destino: as duplicadas da origem entre si (sem as que já
+    estão no destino) e as fotos da origem que o destino já tem."""
+
+    dest: Path
+    groups: list[DuplicateGroup]
+    matches: list[DestMatch]
+
+
+def dest_check_job(task: Task, result: ScanResult, dest: Path, cache_path: Path) -> DestCheck:
+    if not result.files or dest == result.source or dest.is_relative_to(result.source):
+        return DestCheck(dest, result.groups, [])  # o destino já foi lido como parte da origem
+    exclude = result.source if result.source.is_relative_to(dest) else None
+    files: list[MediaFile] = []
+    for media in scan(dest, exclude=exclude, on_error=lambda _exc: None):
+        files.append(media)
+        if len(files) % 250 == 0:
+            task.report(len(files), 0, "dest_scan")
+    with MetadataReader() as reader:
+        dated: list[tuple[MediaFile, FileDate]] = []
+        for pair in read_dates(reader, files, batch_size=200):
+            dated.append(pair)
+            if len(dated) % 200 == 0:
+                task.report(len(dated), len(files), "dest_dates")
+        with HashCache(cache_path) as cache:
+            groups, matches = find_in_destination(
+                result.files,
+                dated,
+                reader,
+                cache,
+                progress=lambda d, t: task.report(d, t, "hashes"),
+            )
+    return DestCheck(dest, groups, matches)
+
+
 # --- Planejar -------------------------------------------------------------------------
 
 
@@ -129,17 +171,39 @@ class PlanOptions:
     duplicates_folder: str
     no_date_folder: str
     not_duplicates: frozenset[Path] = frozenset()
+    name_dates: bool = True  # sem data nos metadados, usa a data do nome do arquivo
+    excluded: frozenset[Path] = frozenset()  # desmarcados na lista
+    trash_excluded: bool = False  # ao mover, desmarcados vão para a Lixeira
+    in_dest: Mapping[Path, tuple[DestAction, MediaFile]] = field(default_factory=dict)
 
     def rule_settings(self) -> RuleSettings:
         return RuleSettings(self.pattern, self.lang, self.no_date_folder, self.duplicates_folder)
 
 
-def plan_job(task: Task, result: ScanResult, options: PlanOptions) -> Plan:
-    files = [(m, d) for m, d in result.files if extension(m) in options.extensions]
+def plan_job(
+    task: Task | None, result: ScanResult, options: PlanOptions, check: DestCheck | None = None
+) -> Plan:
+    files = [
+        (m, d if d.value or not options.name_dates else date_from_name(m.path.name))
+        for m, d in result.files
+        if extension(m) in options.extensions
+    ]
+    groups = check.groups if check is not None else result.groups
     duplicates: set[Path] = set()
+    in_dest = dict(options.in_dest)
     if options.separate_duplicates:
-        duplicates = duplicate_paths(result.groups) - options.not_duplicates
-    return build_plan(files, options.dest, options.rule_settings(), duplicates)
+        duplicates = duplicate_paths(groups) - options.not_duplicates
+    else:  # sem pasta de duplicadas, "mover para duplicadas" vira organizar normalmente
+        in_dest = {p: v for p, v in in_dest.items() if v[0] is not DestAction.DUPLICATE}
+    return build_plan(
+        files,
+        options.dest,
+        options.rule_settings(),
+        duplicates,
+        excluded=options.excluded,
+        trash_excluded=options.trash_excluded,
+        in_dest=in_dest,
+    )
 
 
 # --- Organizar ------------------------------------------------------------------------
@@ -148,6 +212,7 @@ def plan_job(task: Task, result: ScanResult, options: PlanOptions) -> Plan:
 @dataclass(slots=True)
 class ExecutionSummary:
     counts: Counter[Status]
+    kinds: Counter[str]  # done, trashed, replaced e os motivos de pular (Skip)
     report: Path
     cancelled: bool
     errors: list[ItemResult]
@@ -170,8 +235,17 @@ def execute_job(task: Task, plan: Plan, mode: Mode, report: Path, lang: str) -> 
     # que já foi movido. Se ele não puder ser criado, nada é tocado.
     write_report(report, collect(), mode, lang)
     counts = Counter(r.status for r in results)
+    kinds = Counter(_kind(r) for r in results)
     errors = [r for r in results if r.status in (Status.FAILED, Status.PARTIAL)]
-    return ExecutionSummary(counts, report, counts[Status.CANCELLED] > 0, errors)
+    return ExecutionSummary(counts, kinds, report, counts[Status.CANCELLED] > 0, errors)
+
+
+def _kind(r: ItemResult) -> str:
+    if r.status is Status.DONE:
+        return "trashed" if r.item.trash else "replaced" if r.item.replaces else "done"
+    if r.status is Status.SKIPPED and r.item.skip:
+        return r.item.skip.value
+    return r.status.value
 
 
 # --- Tags IA --------------------------------------------------------------------------

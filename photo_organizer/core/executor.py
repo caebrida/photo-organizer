@@ -7,6 +7,10 @@
   só é apagada depois disso.
 - **Mover no mesmo disco**: ``os.rename``, atômico.
 - Caminhos longos (> 260 caracteres) usam o prefixo ``\\\\?\\`` do Windows.
+- **Lixeira** (desmarcados ao mover; foto do destino substituída): só em disco local.
+  Em rede ou pendrive o Windows apagaria de vez, então o arquivo fica e vira erro.
+- **Substituir**: a nova entra com nome temporário, a antiga vai para a Lixeira e só
+  então a nova recebe o nome. Se a antiga não puder ir, a nova volta e nada muda.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from photo_organizer.core.planner import Plan, PlanItem
 
 CHUNK = 1024 * 1024
 _ERROR_NOT_SAME_DEVICE = 17  # winerror do Windows para rename entre volumes
+_DRIVE_FIXED = 3  # GetDriveTypeW: disco local, o único com Lixeira garantida
 
 
 class Mode(StrEnum):
@@ -36,7 +41,7 @@ class Mode(StrEnum):
 
 class Status(StrEnum):
     DONE = "done"
-    SKIPPED = "skipped"  # já estava no lugar certo
+    SKIPPED = "skipped"  # já estava no lugar, já existe no destino ou deixado de fora
     PARTIAL = "partial"  # arquivo no destino, mas algo falhou (sidecar ou apagar origem)
     FAILED = "failed"  # nada mudou para este arquivo
     CANCELLED = "cancelled"
@@ -67,8 +72,12 @@ def execute(
     for done, item in enumerate(plan.items, 1):
         if cancel is not None and cancel.is_set():
             result = ItemResult(item, Status.CANCELLED)
+        elif item.trash and mode is Mode.MOVE:
+            result = _trash_item(item)
         elif item.skip:
             result = ItemResult(item, Status.SKIPPED)
+        elif item.replaces is not None:
+            result = _replace(item, mode)
         else:
             result = _process(item, mode)
         if progress is not None:
@@ -91,6 +100,77 @@ def _process(item: PlanItem, mode: Mode) -> ItemResult:
     if warning:
         return ItemResult(item, Status.PARTIAL, warning)
     return ItemResult(item, Status.DONE)
+
+
+def _trash_item(item: PlanItem) -> ItemResult:
+    try:
+        move_to_trash(item.media.path)
+    except OSError as exc:
+        return ItemResult(item, Status.FAILED, _describe(exc))
+    if item.media.sidecar is not None:
+        try:
+            move_to_trash(item.media.sidecar)
+        except OSError as exc:
+            return ItemResult(item, Status.PARTIAL, f"Sidecar: {_describe(exc)}")
+    return ItemResult(item, Status.DONE)
+
+
+def _replace(item: PlanItem, mode: Mode) -> ItemResult:
+    old = item.replaces
+    assert old is not None
+    src, dest = item.media.path, item.dest
+    tmp = dest.with_name(f"~{dest.name}.{os.getpid()}.new")
+    try:
+        warning = _transfer(src, tmp, mode)
+    except OSError as exc:
+        return ItemResult(item, Status.FAILED, _describe(exc))
+    try:
+        move_to_trash(old.path)
+    except OSError as exc:
+        try:  # desfaz: a nova volta para a origem (ou some, se era cópia)
+            if mode is Mode.MOVE and not warning:
+                _transfer(tmp, src, Mode.MOVE)
+            else:
+                os.remove(_fs(tmp))
+        except OSError as undo:
+            return ItemResult(
+                item, Status.FAILED,
+                f"{_describe(exc)}. A nova ficou em {tmp}: {_describe(undo)}",
+            )  # fmt: skip
+        return ItemResult(item, Status.FAILED, f"{_describe(exc)}. Nada foi trocado.")
+    try:
+        os.rename(_fs(tmp), _fs(dest))
+    except OSError as exc:
+        return ItemResult(
+            item, Status.PARTIAL,
+            f"A antiga foi para a Lixeira, mas a nova ficou em {tmp}: {_describe(exc)}",
+        )  # fmt: skip
+    if item.media.sidecar is not None and item.sidecar_dest is not None:
+        try:
+            if os.path.exists(_fs(item.sidecar_dest)):  # sidecar da foto antiga
+                move_to_trash(item.sidecar_dest)
+            warning = _transfer(item.media.sidecar, item.sidecar_dest, mode) or warning
+        except OSError as exc:
+            return ItemResult(item, Status.PARTIAL, f"Sidecar: {_describe(exc)}")
+    if warning:
+        return ItemResult(item, Status.PARTIAL, warning)
+    return ItemResult(item, Status.DONE)
+
+
+def move_to_trash(path: Path) -> None:
+    """Manda o arquivo para a Lixeira do Windows, ou levanta ``OSError``."""
+    if sys.platform == "win32":
+        import ctypes
+
+        root = os.path.splitdrive(os.path.abspath(path))[0] + os.sep
+        if ctypes.windll.kernel32.GetDriveTypeW(root) != _DRIVE_FIXED:
+            raise OSError(
+                errno.EPERM, "Esta unidade não tem Lixeira; o arquivo ficou onde estava", str(path)
+            )
+    from PySide6.QtCore import QFile  # a mesma Lixeira do Explorador, sem dependência nova
+
+    if not QFile.moveToTrash(str(path)):
+        raise OSError(errno.EIO, "Não foi possível mandar para a Lixeira", str(path))
 
 
 def _transfer(src: Path, dst: Path, mode: Mode) -> str | None:

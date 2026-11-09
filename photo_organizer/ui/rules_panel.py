@@ -155,6 +155,15 @@ class RulesPanel(QScrollArea):
         ops.addWidget(self.copy_radio)
         ops.addStretch()
         layout.addLayout(ops)
+        self.trash_excluded = QCheckBox(self.tr("Mandar os desmarcados para a Lixeira"))
+        self.trash_excluded.setToolTip(
+            self.tr("Só ao mover: os arquivos que você desmarcou na lista saem da origem e vão "
+                    "para a Lixeira do Windows. Em pendrive ou rede não há Lixeira e eles ficam.")
+        )  # fmt: skip
+        self.trash_excluded.toggled.connect(self._on_changed)
+        self.move_radio.toggled.connect(self.trash_excluded.setEnabled)
+        self.trash_excluded.setEnabled(False)
+        layout.addWidget(self.trash_excluded)
         note = QLabel(self.tr("Não há desfazer: cada execução gera um relatório CSV."))
         note.setObjectName("Muted")
         note.setWordWrap(True)
@@ -175,6 +184,14 @@ class RulesPanel(QScrollArea):
             row = QLabel(f"<span style='color:#F5A623'>{i}</span>&nbsp;&nbsp;{text}")
             row.setObjectName("PriorityRow")
             layout.addWidget(row)
+        self.name_dates = QCheckBox(self.tr("5  Data no nome do arquivo (IMG_20261027…)"))
+        self.name_dates.setChecked(True)
+        self.name_dates.setToolTip(
+            self.tr("Só para arquivos sem nenhuma das datas acima. Sem data no nome, vão para "
+                    "a pasta de arquivos sem data.")
+        )  # fmt: skip
+        self.name_dates.toggled.connect(self._on_changed)
+        layout.addWidget(self.name_dates)
         layout.addStretch()
 
         self.error: str | None = None
@@ -208,6 +225,8 @@ class RulesPanel(QScrollArea):
             separate_duplicates=self.separate.isChecked(),
             duplicates_folder=self.dup_folder.text().strip(),
             no_date_folder=self.no_date.text().strip(),
+            name_dates=self.name_dates.isChecked(),
+            trash_excluded=self.trash_excluded.isChecked() and self.mode() is Mode.MOVE,
         )
 
     def set_counts(self, counts: Counter[str]) -> None:
@@ -232,6 +251,8 @@ class RulesPanel(QScrollArea):
         settings.setValue("rules/dup_folder", self.dup_folder.text())
         settings.setValue("rules/no_date", self.no_date.text())
         settings.setValue("rules/mode", self.mode().value)
+        settings.setValue("rules/name_dates", self.name_dates.isChecked())
+        settings.setValue("rules/trash_excluded", self.trash_excluded.isChecked())
         off = [e for e, b in self.type_boxes.items() if not b.isChecked()]
         settings.setValue("rules/off_types", ",".join(off))
 
@@ -240,6 +261,8 @@ class RulesPanel(QScrollArea):
         self.separate.setChecked(settings.value("rules/separate", True, type=bool))
         self.dup_folder.setText(settings.value("rules/dup_folder", self.dup_folder.text()))
         self.no_date.setText(settings.value("rules/no_date", self.no_date.text()))
+        self.name_dates.setChecked(settings.value("rules/name_dates", True, type=bool))
+        self.trash_excluded.setChecked(settings.value("rules/trash_excluded", False, type=bool))
         mode = settings.value("rules/mode", Mode.COPY.value)
         (self.move_radio if mode == Mode.MOVE.value else self.copy_radio).setChecked(True)
         off = set(filter(None, str(settings.value("rules/off_types", "")).split(",")))

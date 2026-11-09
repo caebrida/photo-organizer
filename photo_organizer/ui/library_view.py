@@ -3,6 +3,9 @@
 O modelo é uma lista plana com linhas de cabeçalho (uma por dia) e linhas de arquivo. A
 ``QListView`` em modo ícone quebra a linha antes de cada cabeçalho porque ele ocupa a
 largura inteira. As miniaturas são pedidas só quando a célula é desenhada.
+
+Cada miniatura e cada dia têm uma caixa de marcação: desmarcado fica de fora (não é
+copiado nem movido). Espaço e o menu do botão direito valem para a seleção.
 """
 
 from __future__ import annotations
@@ -25,18 +28,37 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QFont, QImage, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import QAbstractItemView, QListView, QStyle, QStyledItemDelegate
+from PySide6.QtGui import QAction, QFont, QImage, QPainter, QPainterPath, QPixmap
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QListView,
+    QMenu,
+    QStyle,
+    QStyledItemDelegate,
+)
 
 from photo_organizer.core.images import THUMB
-from photo_organizer.core.planner import Plan, PlanItem
+from photo_organizer.core.planner import Plan, PlanItem, Skip
 from photo_organizer.core.rules import RuleSettings
 from photo_organizer.core.scanner import FileKind
 from photo_organizer.ui import icons, theme
 from photo_organizer.ui.workers import ThumbnailService
 
 CARD_W, THUMB_H, CARD_H = 132, 92, 116
+CHECK = 16
 ItemRole = Qt.ItemDataRole.UserRole + 1
+
+
+def card_check_rect(card: QRect) -> QRect:
+    return QRect(card.x() + 8, card.y() + 8, CHECK, CHECK)
+
+
+def header_check_rect(header: QRect) -> QRect:
+    return QRect(header.x() + 2, header.y() + 14, CHECK, CHECK)
+
+
+def excluded(item: PlanItem) -> bool:
+    return item.skip is Skip.EXCLUDED
 
 
 class Filter(StrEnum):
@@ -92,6 +114,18 @@ class LibraryModel(QAbstractListModel):
     def row_of(self, path: object) -> int | None:  # Path do arquivo
         return self._row_of.get(str(path))
 
+    def items(self) -> list[PlanItem]:
+        """Arquivos mostrados (respeita o filtro)."""
+        return [r for r in self._rows if isinstance(r, PlanItem)]
+
+    def items_of_day(self, header_row: int) -> list[PlanItem]:
+        out: list[PlanItem] = []
+        for r in self._rows[header_row + 1 :]:
+            if isinstance(r, Header):
+                break
+            out.append(r)
+        return out
+
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:  # noqa: B008, N802
         return 0 if parent.isValid() else len(self._rows)
 
@@ -146,8 +180,8 @@ def _matches(item: PlanItem, f: Filter) -> bool:
             return kind is FileKind.RAW
         case Filter.VIDEO:
             return kind is FileKind.VIDEO
-        case Filter.DUPLICATES:
-            return item.duplicate
+        case Filter.DUPLICATES:  # inclui as que já existem no destino
+            return item.duplicate or item.skip is Skip.KEPT or item.replaces is not None
 
 
 def _build_rows(plan: Plan, f: Filter, settings: RuleSettings | None, lang: str) -> list[Row]:
@@ -196,7 +230,10 @@ class LibraryDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if isinstance(row, Header):
-            self._paint_header(painter, option.rect, row)
+            day = index.model().items_of_day(index.row())
+            out = sum(1 for i in day if excluded(i))
+            state = True if out == 0 else False if out == len(day) else None
+            self._paint_header(painter, option.rect, row, state)
         else:
             selected = bool(option.state & QStyle.StateFlag.State_Selected)
             hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
@@ -210,8 +247,9 @@ class LibraryDelegate(QStyledItemDelegate):
             )
         painter.restore()
 
-    def _paint_header(self, p: QPainter, rect: QRect, h: Header) -> None:
-        x, y = rect.x() + 2, rect.y() + 12
+    def _paint_header(self, p: QPainter, rect: QRect, h: Header, state: bool | None) -> None:
+        self._paint_check(p, header_check_rect(rect), state)
+        x, y = rect.x() + 2 + CHECK + 10, rect.y() + 12
         p.drawPixmap(x, y + 2, icons.pixmap("folder", theme.MUTED, 16))
         x += 26
         p.setFont(self._title)
@@ -235,6 +273,9 @@ class LibraryDelegate(QStyledItemDelegate):
     def _paint_card(self, p: QPainter, rect: QRect, item: PlanItem, pm: QPixmap | None,
                     selected: bool, hover: bool) -> None:  # fmt: skip
         thumb = QRectF(rect.x() + 2, rect.y() + 2, CARD_W - 4, THUMB_H)
+        left_out = excluded(item)
+        if left_out:
+            p.setOpacity(0.35)
         clip = QPainterPath()
         clip.addRoundedRect(thumb, 6, 6)
         p.fillPath(clip, theme.color(theme.CARD_HOVER if hover else theme.CARD))
@@ -269,14 +310,36 @@ class LibraryDelegate(QStyledItemDelegate):
         ext = item.media.path.suffix.lstrip(".").upper()
         color = {FileKind.RAW: theme.ACCENT, FileKind.VIDEO: theme.VIOLET}.get(kind, theme.TEXT)
         self._badge_at(p, ext, thumb.left() + 6, thumb.bottom() - 20, color, "#000000", 170)
-        if item.duplicate:
-            self._badge_at(p, "DUP", thumb.right() - 34, thumb.top() + 6, "#FFFFFF", theme.RED, 255)
-        elif item.skip:
+        p.setOpacity(1.0)
+        badge = None
+        if item.trash:
+            badge = (QCoreApplication.translate("LibraryView", "LIXEIRA"), "#FFFFFF", theme.RED)
+        elif item.skip is Skip.KEPT:
+            badge = (
+                QCoreApplication.translate("LibraryView", "NO DESTINO"),
+                theme.ACCENT_TEXT,
+                theme.VIOLET,
+            )
+        elif item.replaces is not None:
+            badge = (
+                QCoreApplication.translate("LibraryView", "SUBSTITUI"),
+                theme.ACCENT_TEXT,
+                theme.VIOLET,
+            )
+        elif item.duplicate:
+            badge = ("DUP", "#FFFFFF", theme.RED)
+        if badge:
+            p.setFont(self._badge)
+            w = p.fontMetrics().horizontalAdvance(badge[0]) + 8
+            self._badge_at(p, badge[0], thumb.right() - 6 - w, thumb.top() + 6, badge[1],
+                           badge[2], 255)  # fmt: skip
+        elif item.skip is Skip.IN_PLACE:
             p.drawPixmap(
                 int(thumb.right() - 22),
                 int(thumb.top() + 6),
                 icons.pixmap("check", theme.GREEN, 16),
             )
+        self._paint_check(p, card_check_rect(rect), not left_out)
 
         if selected:
             p.setPen(theme.color(theme.ACCENT))
@@ -293,6 +356,18 @@ class LibraryDelegate(QStyledItemDelegate):
         p.drawText(QRectF(rect.x() + 2, thumb.bottom() + 6, CARD_W - 4, 16),
                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)  # fmt: skip
 
+    def _paint_check(self, p: QPainter, r: QRect, state: bool | None) -> None:
+        """Marcado (vai), desmarcado (fica de fora) ou misto (só parte do dia)."""
+        box = QRectF(r)
+        p.setPen(theme.color(theme.ACCENT if state is not False else theme.MUTED))
+        p.setBrush(theme.color(theme.ACCENT) if state else theme.color("#000000", 150))
+        p.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        if state:
+            p.drawPixmap(r.x() + 2, r.y() + 2, icons.pixmap("check", theme.ACCENT_TEXT, 12))
+        elif state is None:
+            p.fillRect(QRectF(r.x() + 4, r.center().y() - 1, CHECK - 8, 2),
+                       theme.color(theme.ACCENT))  # fmt: skip
+
     def _badge_at(
         self, p: QPainter, text: str, x: float, y: float, fg: str, bg: str, alpha: int
     ) -> None:
@@ -308,6 +383,7 @@ class LibraryDelegate(QStyledItemDelegate):
 
 class LibraryView(QListView):
     currentItemChanged = Signal(object)  # PlanItem | None
+    includeRequested = Signal(list, bool)  # caminhos, True = incluir / False = deixar de fora
 
     SPACING = 10
 
@@ -322,7 +398,7 @@ class LibraryView(QListView):
         self.setLayoutMode(QListView.LayoutMode.Batched)
         self.setBatchSize(400)
         self.setSpacing(self.SPACING // 2)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.verticalScrollBar().setSingleStep(24)
         self.setMouseTracking(True)
@@ -341,6 +417,66 @@ class LibraryView(QListView):
 
     def header_width(self) -> int:
         return max(200, self.viewport().width() - self.SPACING - 2)
+
+    def selected_items(self) -> list[PlanItem]:
+        rows = (i.data(ItemRole) for i in self.selectionModel().selectedIndexes())
+        return [r for r in rows if isinstance(r, PlanItem)]
+
+    def _request(self, items: list[PlanItem], include: bool | None = None) -> None:
+        """Sem ``include``: se algum está de fora, inclui todos; senão deixa todos de fora."""
+        if not items:
+            return
+        if include is None:
+            include = any(excluded(i) for i in items)
+        self.includeRequested.emit([i.media.path for i in items], include)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        pos = event.position().toPoint()
+        idx = self.indexAt(pos)
+        row = idx.data(ItemRole) if idx.isValid() else None
+        if event.button() == Qt.MouseButton.LeftButton and row is not None:
+            rect = self.visualRect(idx)
+            if isinstance(row, PlanItem) and card_check_rect(rect).contains(pos):
+                self._request([row])
+                return
+            if isinstance(row, Header) and header_check_rect(rect).contains(pos):
+                self._request(self.model().items_of_day(idx.row()))
+                return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Space:
+            self._request(self.selected_items())
+            return
+        super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        menu = QMenu(self)
+        chosen = self.selected_items()
+        shown = self.model().items()
+        for text, items, include in (
+            (QCoreApplication.translate("LibraryView", "Incluir selecionados"), chosen, True),
+            (
+                QCoreApplication.translate("LibraryView", "Deixar selecionados de fora"),
+                chosen,
+                False,
+            ),
+            (None, None, None),
+            (QCoreApplication.translate("LibraryView", "Incluir todos os mostrados"), shown, True),
+            (
+                QCoreApplication.translate("LibraryView", "Deixar todos os mostrados de fora"),
+                shown,
+                False,
+            ),
+        ):
+            if text is None:
+                menu.addSeparator()
+                continue
+            act = QAction(text, menu)
+            act.setEnabled(bool(items))
+            act.triggered.connect(lambda _=False, i=items, inc=include: self._request(i, inc))
+            menu.addAction(act)
+        menu.exec(event.globalPos())
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

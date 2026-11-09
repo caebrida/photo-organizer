@@ -13,7 +13,16 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QSettings, QStandardPaths, Qt, QThreadPool, QTimer, QUrl
+from PySide6.QtCore import (
+    QItemSelectionModel,
+    QLocale,
+    QSettings,
+    QStandardPaths,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+)
 from PySide6.QtGui import QAction, QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -32,8 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from photo_organizer import __version__
-from photo_organizer.core.dates import DateSource
-from photo_organizer.core.duplicates import duplicate_paths
+from photo_organizer.core.dates import DateSource, date_from_name
 from photo_organizer.core.executor import Mode, Status
 from photo_organizer.core.planner import Plan
 from photo_organizer.core.report import default_report_path
@@ -44,6 +52,7 @@ from photo_organizer.ui.library_view import Filter, LibraryModel, LibraryView
 from photo_organizer.ui.rules_panel import RulesPanel
 from photo_organizer.ui.tagging_view import TaggingView
 from photo_organizer.ui.workers import (
+    DestCheck,
     ExecutionSummary,
     PlanOptions,
     ScanResult,
@@ -51,6 +60,7 @@ from photo_organizer.ui.workers import (
     TagWriteSummary,
     Task,
     ThumbnailService,
+    dest_check_job,
     execute_job,
     plan_job,
     scan_job,
@@ -150,6 +160,8 @@ class MainWindow(QMainWindow):
         self.source: Path | None = None
         self.dest: Path | None = None
         self.scan_result: ScanResult | None = None
+        self.dest_check: DestCheck | None = None  # o que o destino já tem
+        self.excluded: set[Path] = set()  # desmarcados na lista: ficam de fora
         self.plan: Plan | None = None
         self._task: Task | None = None
         self.last_summary: ExecutionSummary | None = None
@@ -205,7 +217,7 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         self.pages.addWidget(self._build_organize_page())
         self.duplicates = DuplicatesView(self.thumbnails)
-        self.duplicates.notDuplicatesChanged.connect(lambda _: self.schedule_plan())
+        self.duplicates.changed.connect(self._on_duplicates_changed)
         self.pages.addWidget(self.duplicates)
         self.tagging = TaggingView(self.thumbnails)
         self.tagging.number_locale = self.locale_
@@ -322,6 +334,7 @@ class MainWindow(QMainWindow):
         self.inspector = Inspector(self.thumbnails)
         self.inspector.lang = self.lang
         self.library.currentItemChanged.connect(self.inspector.show_item)
+        self.library.includeRequested.connect(self._set_included)
         split.addWidget(self.inspector)
         split.setStretchFactor(1, 1)
         return split
@@ -420,11 +433,15 @@ class MainWindow(QMainWindow):
             self._clear_scan()
 
     def set_dest(self, path: Path | None) -> None:
+        changed = path != self.dest
         self.dest = path
         self.dest_pill.set_path(path)
         self.rules.set_dest(path)
         if self.scan_result is None:
             self._show_default_empty()
+        elif changed:
+            self._show_source_duplicates()
+            self._start_dest_check()
         self.schedule_plan()
         self._update_state()
 
@@ -445,10 +462,7 @@ class MainWindow(QMainWindow):
             if self.dest and self.dest.is_relative_to(self.source) and self.dest != self.source
             else None
         )
-        cache_dir = Path(
-            QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)
-        )
-        task = Task(scan_job, self.source, exclude, cache_dir / "hashes.sqlite")
+        task = Task(scan_job, self.source, exclude, self._cache_path())
         task.signals.finished.connect(self._on_scanned)
         self._run(task, "scan")
 
@@ -460,10 +474,7 @@ class MainWindow(QMainWindow):
         if result.files:
             media, date = result.files[0]
             self.rules.set_sample(media.path.name, media.kind, date.value or datetime.now())
-        dates = {m.path: d for m, d in result.files}
-        self.duplicates.folder_name = self.rules.dup_folder.text()
-        self.duplicates.set_groups(result.groups, dates)
-        self.tab_duplicates.set_count(len(duplicate_paths(result.groups)))
+        self._show_source_duplicates()
         if not result.files:
             self._clear_scan(
                 self.tr("Nenhuma foto ou vídeo encontrado"),
@@ -474,6 +485,58 @@ class MainWindow(QMainWindow):
         self._start_plan()
         if result.unreadable:
             self._warn_unreadable(result.unreadable)
+        self._start_dest_check()
+
+    def _cache_path(self) -> Path:
+        folder = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.AppLocalDataLocation
+        )
+        return Path(folder) / "hashes.sqlite"
+
+    def _show_source_duplicates(self) -> None:
+        """Duplicadas só da origem, enquanto o destino não foi conferido."""
+        self.dest_check = None
+        result = self.scan_result
+        groups = result.groups if result else []
+        dates = {m.path: d for m, d in result.files} if result else {}
+        self.duplicates.folder_name = self.rules.dup_folder.text()
+        self.duplicates.set_groups(groups, dates)
+        self.tab_duplicates.set_count(self.duplicates.count())
+
+    # --- Procurar no destino ----------------------------------------------------------
+
+    def _start_dest_check(self) -> None:
+        result = self.scan_result
+        if self._task is not None or result is None or not result.files or self.dest is None:
+            return
+        if self._folder_problem(self.dest):
+            return  # o aviso aparece ao Organizar; sem destino legível não há o que comparar
+        task = Task(dest_check_job, result, self.dest, self._cache_path())
+        task.signals.finished.connect(self._on_dest_checked)
+        self._run(task, "dest_scan")
+
+    def _on_dest_checked(self, check: DestCheck) -> None:
+        self._task = None
+        self._set_busy(None)
+        if self.scan_result is None or check.dest != self.dest:
+            return
+        self.dest_check = check
+        dates = {m.path: d for m, d in self.scan_result.files}
+        self.duplicates.folder_name = self.rules.dup_folder.text()
+        self.duplicates.set_groups(check.groups, dates, check.matches)
+        self.tab_duplicates.set_count(self.duplicates.count())
+        self._update_stats()
+        self.schedule_plan()
+
+    def _on_duplicates_changed(self) -> None:
+        self.schedule_plan()
+
+    def _set_included(self, paths: list[Path], include: bool) -> None:
+        if include:
+            self.excluded.difference_update(paths)
+        else:
+            self.excluded.update(paths)
+        self.schedule_plan()
 
     def _warn_unreadable(self, unreadable: list[tuple[str, str]]) -> None:
         lines = [f"• {folder} — {reason}" for folder, reason in unreadable[:8]]
@@ -515,11 +578,17 @@ class MainWindow(QMainWindow):
             self.plan = None
             self._update_state()
             return
-        options = replace(options, not_duplicates=self.duplicates.not_duplicates())
+        options = replace(
+            options,
+            not_duplicates=self.duplicates.not_duplicates(),
+            in_dest=self.duplicates.in_dest(),
+            excluded=frozenset(self.excluded),
+        )
         self.duplicates.folder_name = options.duplicates_folder
         self._plan_gen += 1
         gen = self._plan_gen
-        task = Task(plan_job, result, options)
+        check = self.dest_check if self.dest_check and self.dest_check.dest == self.dest else None
+        task = Task(plan_job, result, options, check)
         task.signals.finished.connect(lambda plan, g=gen, o=options: self._on_planned(plan, g, o))
         task.signals.failed.connect(self._on_failed)
         # O Task precisa de referência até terminar (setAutoDelete(False)); solta depois.
@@ -539,11 +608,19 @@ class MainWindow(QMainWindow):
         self._done_gen = gen
         self.plan = plan
         current = self.library.currentIndex().data(Qt.ItemDataRole.UserRole + 1)
+        chosen = [i.media.path for i in self.library.selected_items()]
         self.library_model.set_plan(plan, options.rule_settings())
         self.center_stack.setCurrentWidget(self.library)
         self.inspector.show_item(None)
         if current is not None:
             self._reselect(current)
+        selection = self.library.selectionModel()
+        for path in chosen:
+            row = self.library_model.row_of(path)
+            if row is not None:
+                selection.select(
+                    self.library_model.index(row), QItemSelectionModel.SelectionFlag.Select
+                )
         self._update_state()
 
     def _set_filter(self, value: Filter) -> None:
@@ -570,13 +647,14 @@ class MainWindow(QMainWindow):
                 self.tr("Não foi possível acessar a pasta de destino:"), self.dest, problem
             )
             return
+        mode = self.rules.mode()
         todo = self.plan.to_process
-        if not todo:
+        trash = self.plan.to_trash if mode is Mode.MOVE else []
+        if not todo and not trash:
             QMessageBox.information(
-                self, "Photo Organizer", self.tr("Todos os arquivos já estão no lugar certo.")
+                self, "Photo Organizer", self.tr("Nenhum arquivo para copiar ou mover.")
             )
             return
-        mode = self.rules.mode()
         n = self.locale_.toString(len(todo))
         if mode is Mode.MOVE:
             text = self.tr(
@@ -587,6 +665,22 @@ class MainWindow(QMainWindow):
             text = self.tr("Copiar {n} arquivos para\n{dest}?\n\nA origem não é alterada.").format(
                 n=n, dest=self.dest
             )
+        extra = []
+        replacing = sum(1 for i in todo if i.replaces is not None)
+        if replacing:
+            extra.append(
+                self.tr("{n} substituem fotos do destino; as antigas vão para a Lixeira.").format(
+                    n=self.locale_.toString(replacing)
+                )
+            )
+        if trash:
+            extra.append(
+                self.tr("{n} desmarcados saem da origem e vão para a Lixeira.").format(
+                    n=self.locale_.toString(len(trash))
+                )
+            )
+        if extra:
+            text += "\n\n" + "\n".join(extra)
         box = QMessageBox(QMessageBox.Icon.Question, "Photo Organizer", text, parent=self)
         ok = box.addButton(
             self.tr("Mover") if mode is Mode.MOVE else self.tr("Copiar"),
@@ -597,6 +691,7 @@ class MainWindow(QMainWindow):
         box.exec()
         if box.clickedButton() is not ok:
             return
+        self.inspector.stop_video()  # solta o arquivo que estiver tocando
         report = default_report_path(self.dest, datetime.now())
         task = Task(execute_job, self.plan, mode, report, self.lang)
         task.signals.finished.connect(self._on_executed)
@@ -605,11 +700,19 @@ class MainWindow(QMainWindow):
     def _on_executed(self, summary: ExecutionSummary) -> None:
         self._task = None
         self._set_busy(None)
-        c = summary.counts
+        c, k = summary.counts, summary.kinds
         lines = [
-            self.tr("Organizados: {n}").format(n=c[Status.DONE]),
-            self.tr("Já estavam no lugar: {n}").format(n=c[Status.SKIPPED]),
+            self.tr("Organizados: {n}").format(n=k["done"]),
+            self.tr("Já estavam no lugar: {n}").format(n=k["in-place"]),
         ]
+        for key, text in (
+            ("replaced", self.tr("Substituíram a do destino: {n}")),
+            ("kept", self.tr("Já existiam no destino (ficou a de lá): {n}")),
+            ("excluded", self.tr("Deixados de fora: {n}")),
+            ("trashed", self.tr("Deixados de fora e enviados para a Lixeira: {n}")),
+        ):
+            if k[key]:
+                lines.append(text.format(n=k[key]))
         if c[Status.PARTIAL]:
             lines.append(self.tr("Com aviso: {n}").format(n=c[Status.PARTIAL]))
         if c[Status.FAILED]:
@@ -748,6 +851,8 @@ class MainWindow(QMainWindow):
             "scan": self.tr("Procurando arquivos… {d}").format(d=d),
             "dates": self.tr("Lendo metadados… {d} / {t}").format(d=d, t=t),
             "hashes": self.tr("Comparando imagens… {d} / {t}").format(d=d, t=t),
+            "dest_scan": self.tr("Procurando no destino… {d}").format(d=d),
+            "dest_dates": self.tr("Lendo o destino… {d} / {t}").format(d=d, t=t),
             "organize": self.tr("Organizando… {d} / {t}").format(d=d, t=t),
             "tags": self.tr("Analisando fotos… {d} / {t}").format(d=d, t=t),
             "write_tags": self.tr("Gravando tags… {d} / {t}").format(d=d, t=t),
@@ -799,6 +904,8 @@ class MainWindow(QMainWindow):
     ) -> None:
         if not keep_result:
             self.scan_result = None
+            self.dest_check = None
+            self.excluded.clear()
             self.duplicates.set_groups([], {})
             self.tab_duplicates.set_count(0)
             self.rules.set_counts(Counter())
@@ -836,7 +943,10 @@ class MainWindow(QMainWindow):
     def _update_state(self) -> None:
         busy = self._task is not None
         plan = self.plan
-        todo = len(plan.to_process) if plan else 0
+        todo = 0
+        if plan:
+            todo = len(plan.to_process)
+            todo += len(plan.to_trash) if self.rules.mode() is Mode.MOVE else 0
         self.scan_button.setEnabled(not busy and self.source is not None)
         self.act_scan.setEnabled(self.scan_button.isEnabled())
         can_organize = not busy and plan is not None and todo > 0 and not self._plan_pending()
@@ -870,12 +980,18 @@ class MainWindow(QMainWindow):
         sources = Counter(d.source for _, d in result.files)
         n = self.locale_.toString
         xmp = sources[DateSource.XMP_SIDECAR] + sources[DateSource.XMP_EMBEDDED]
+        named = 0
+        if self.rules.name_dates.isChecked():
+            named = sum(
+                1 for m, d in result.files if d.value is None and date_from_name(m.path.name).value
+            )
         parts = [
             f"EXIF {n(sources[DateSource.EXIF])}",
             f"XMP {n(xmp)}",
             self.tr("Vídeo {n}").format(n=n(sources[DateSource.VIDEO])),
-            self.tr("Sem data {n}").format(n=n(sources[None])),
-            self.tr("Duplicadas {n}").format(n=n(len(duplicate_paths(result.groups)))),
+            self.tr("Nome {n}").format(n=n(named)),
+            self.tr("Sem data {n}").format(n=n(sources[None] - named)),
+            self.tr("Duplicadas {n}").format(n=n(self.duplicates.count())),
         ]
         self.stats_label.setText("  ·  ".join(parts))
 
@@ -907,6 +1023,7 @@ class MainWindow(QMainWindow):
         s = self.settings
         self.rules.load(s)
         self.rules.copy_radio.toggled.connect(lambda _: self._update_state())
+        self.rules.name_dates.toggled.connect(lambda _: self._update_stats())
         # Sem acessar o disco: uma pasta de rede fora do ar ou pedindo senha não pode
         # impedir a janela de abrir. O acesso é conferido ao Escanear/Organizar.
         if src := s.value("paths/source"):

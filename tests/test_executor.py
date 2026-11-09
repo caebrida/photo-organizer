@@ -162,3 +162,119 @@ def test_long_paths(tmp_path):
     assert target.startswith("\\\\?\\")
     with open(target, "rb") as f:  # noqa: PTH123 (str com prefixo \?\)
         assert f.read() == b"raw-1" * 1000
+
+
+# --- Deixados de fora, Lixeira e substituição -----------------------------------------
+
+
+@pytest.fixture
+def fake_trash(tmp_path, monkeypatch):
+    """Lixeira de mentira: os testes não enchem a Lixeira de verdade do Windows."""
+    bin_ = tmp_path / "lixeira"
+    bin_.mkdir()
+
+    def move(path):
+        Path(path).replace(bin_ / Path(path).name)
+
+    monkeypatch.setattr(executor, "move_to_trash", move)
+    return bin_
+
+
+def test_left_out_files_stay_or_go_to_the_trash_only_when_moving(tmp_path, fake_trash):
+    from photo_organizer.core.planner import Skip
+
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    make_source(src)
+    files = [(f, DATE) for f in scan(src)]
+    out = [f.path for f, _ in files if f.path.suffix == ".ARW"]
+    copy_plan = build_plan(files, dst, SETTINGS, excluded=out, trash_excluded=True)
+    results = {r.item.media.path.suffix: r.status for r in execute(copy_plan, Mode.COPY)}
+    assert results[".ARW"] is Status.SKIPPED  # copiando, a origem nunca muda
+    assert (src / "DSC0001.ARW").exists()
+
+    plan = build_plan(files, tmp_path / "dst2", SETTINGS, excluded=out, trash_excluded=True)
+    assert [i.skip for i in plan.items if i.trash] == [Skip.EXCLUDED]
+    results = {r.item.media.path.suffix: r.status for r in execute(plan, Mode.MOVE)}
+    assert results[".ARW"] is Status.DONE
+    assert not (src / "DSC0001.ARW").exists()
+    assert {p.name for p in fake_trash.iterdir()} == {"DSC0001.ARW", "DSC0001.xmp"}
+    assert not (tmp_path / "dst2" / "2026" / "10" / "27" / "RAW").exists()
+
+
+def _existing(dst: Path, data: bytes):
+    from photo_organizer.core.scanner import FileKind, MediaFile
+
+    old = day(dst) / "DSC0001.JPG"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(data)
+    return MediaFile(old, FileKind.JPEG)
+
+
+@pytest.mark.parametrize("mode", [Mode.COPY, Mode.MOVE])
+def test_replace_sends_the_old_destination_file_to_the_trash(tmp_path, fake_trash, mode):
+    from photo_organizer.core.planner import DestAction
+
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    make_source(src)
+    old = _existing(dst, b"menor")
+    files = [(f, DATE) for f in scan(src)]
+    jpg = next(f for f, _ in files if f.path.suffix == ".JPG")
+    plan = build_plan(files, dst, SETTINGS, in_dest={jpg.path: (DestAction.REPLACE, old)})
+    item = next(i for i in plan.items if i.media == jpg)
+    assert item.dest == old.path and item.replaces == old
+    results = {r.item.media.path.suffix: r for r in execute(plan, mode)}
+    assert results[".JPG"].status is Status.DONE, results[".JPG"].error
+    assert old.path.read_bytes() == b"jpeg-1"
+    assert (fake_trash / "DSC0001.JPG").read_bytes() == b"menor"
+    assert (src / "DSC0001.JPG").exists() == (mode is Mode.COPY)
+    assert list(day(dst).glob("~*")) == []  # nenhum temporário sobrando
+
+
+def test_replace_changes_nothing_when_the_old_file_cannot_go_to_the_trash(tmp_path, monkeypatch):
+    from photo_organizer.core.planner import DestAction
+
+    def refuse(path):
+        raise OSError(errno.EPERM, "Esta unidade não tem Lixeira", str(path))
+
+    monkeypatch.setattr(executor, "move_to_trash", refuse)
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    make_source(src)
+    old = _existing(dst, b"menor")
+    files = [(f, DATE) for f in scan(src)]
+    jpg = next(f for f, _ in files if f.path.suffix == ".JPG")
+    plan = build_plan(files, dst, SETTINGS, in_dest={jpg.path: (DestAction.REPLACE, old)})
+    result = next(r for r in execute(plan, Mode.MOVE) if r.item.media == jpg)
+    assert result.status is Status.FAILED
+    assert "Nada foi trocado" in result.error
+    assert old.path.read_bytes() == b"menor"
+    assert (src / "DSC0001.JPG").read_bytes() == b"jpeg-1"  # voltou para a origem
+    assert list(day(dst).glob("~*")) == []
+
+
+def test_keep_destination_and_duplicate_actions(tmp_path):
+    from photo_organizer.core.planner import DestAction, Skip
+
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    make_source(src)
+    old = _existing(dst, b"maior")
+    files = [(f, DATE) for f in scan(src)]
+    jpg = next(f for f, _ in files if f.path.suffix == ".JPG")
+    keep = build_plan(files, dst, SETTINGS, in_dest={jpg.path: (DestAction.KEEP, old)})
+    item = next(i for i in keep.items if i.media == jpg)
+    assert item.skip is Skip.KEPT and item.dest == old.path
+    dup = build_plan(files, dst, SETTINGS, in_dest={jpg.path: (DestAction.DUPLICATE, old)})
+    item = next(i for i in dup.items if i.media == jpg)
+    assert item.duplicate and "Duplicadas - Validar" in str(item.dest)
+
+
+def test_move_to_trash_refuses_drives_without_a_recycle_bin(tmp_path, monkeypatch):
+    if os.name != "nt":
+        pytest.skip("só Windows")
+    import ctypes
+
+    f = tmp_path / "foto.jpg"
+    f.write_bytes(b"x")
+    monkeypatch.setattr(ctypes.windll.kernel32, "GetDriveTypeW", lambda root: 4)  # rede
+    with pytest.raises(OSError, match="não tem Lixeira"):
+        executor.move_to_trash(f)
+    assert f.exists()

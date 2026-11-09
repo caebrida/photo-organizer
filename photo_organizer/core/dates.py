@@ -28,6 +28,7 @@ class DateSource(StrEnum):
     XMP_SIDECAR = "xmp-sidecar"
     XMP_EMBEDDED = "xmp-embedded"
     VIDEO = "video"
+    FILENAME = "filename"  # opcional, decidido no plano (ver date_from_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +93,30 @@ def parse_date(value: object, assume_utc: bool = False) -> datetime | None:
         # Vídeos sem fuso explícito: converte de UTC para o horário local deste computador.
         return dt.replace(tzinfo=UTC).astimezone().replace(tzinfo=None)
     return dt
+
+
+# Data no nome: IMG_20261027_143208, IMG-20261027-WA0003 (WhatsApp), PXL_20261027_143208123,
+# Screenshot_2026-10-27-14-32-08, "2026-10-27 14.32.08". Só ano-mês-dia, sem dígito colado
+# antes ou depois, para não ler DSC01234 ou um número qualquer como data.
+_NAME_RE = re.compile(
+    r"(?<!\d)((?:19|20)\d{2})([-_.]?)(0[1-9]|1[0-2])\2(0[1-9]|[12]\d|3[01])"
+    r"(?:[ _T.-]?([01]\d|2[0-3])[-_.:h]?([0-5]\d)[-_.:m]?([0-5]\d)\d{0,3})?(?!\d)"
+)
+
+
+def date_from_name(name: str) -> FileDate:
+    """Data escrita no nome do arquivo, para quem não tem data nos metadados."""
+    for m in _NAME_RE.finditer(name):
+        year, _, month, day, hour, minute, second = m.groups()
+        try:
+            dt = datetime(
+                int(year), int(month), int(day), int(hour or 0), int(minute or 0), int(second or 0)
+            )
+        except ValueError:  # 31 de fevereiro
+            continue
+        if 1990 <= dt.year <= datetime.now().year + 1:  # fora disso é quase sempre um número
+            return FileDate(dt, DateSource.FILENAME, "FileName")
+    return NO_DATE
 
 
 def resolve_date(file_meta: dict, sidecar_meta: dict | None = None) -> FileDate:

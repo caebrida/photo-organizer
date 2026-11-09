@@ -129,6 +129,11 @@ def auto_answer(monkeypatch) -> list[str]:
     return shown
 
 
+def ready(window) -> bool:
+    """Escaneou, conferiu o destino e o plano atual chegou."""
+    return window._task is None and window.plan is not None and not window._plan_pending()
+
+
 @requires_exiftool
 @pytest.mark.parametrize("mode", ["copy", "move"])
 def test_full_flow_scan_review_organize(qtbot, qapp, tmp_path, monkeypatch, mode):
@@ -149,7 +154,7 @@ def test_full_flow_scan_review_organize(qtbot, qapp, tmp_path, monkeypatch, mode
     window.set_dest(dst)
 
     window.scan_button.click()
-    qtbot.waitUntil(lambda: window.plan is not None, timeout=30_000)
+    qtbot.waitUntil(lambda: ready(window), timeout=30_000)
     assert window.library_model.file_count() == 4
     assert window.organize_button.isEnabled()
     expected = "Organizar 4 itens" if mode == "copy" else "Mover 4 itens"
@@ -305,3 +310,110 @@ def test_write_tags_skips_photos_moved_after_analysis(tmp_path):
     assert summary.written == 0
     assert [path for path, _ in summary.errors] == [gone.path]
     assert not (tmp_path / "movida.jpg.xmp").exists()  # nenhum sidecar sozinho
+
+
+def _plan_options(dest: Path, **kw):
+    from photo_organizer.ui.workers import PlanOptions
+
+    base = dict(
+        dest=dest,
+        pattern=FolderPattern.parse("aaaa > mm > dd"),
+        lang="pt",
+        extensions=frozenset({"jpg", "jpeg", "mp4"}),
+        separate_duplicates=True,
+        duplicates_folder="Duplicadas - Validar",
+        no_date_folder="Sem data",
+    )
+    return PlanOptions(**(base | kw))
+
+
+def test_plan_uses_file_name_date_only_without_metadata_date(tmp_path):
+    from photo_organizer.ui.workers import ScanResult, plan_job
+
+    exif = FileDate(datetime(2025, 1, 2), DateSource.EXIF, "EXIF:DateTimeOriginal")
+    files = [
+        (MediaFile(tmp_path / "IMG-20261027-WA0003.jpg", FileKind.JPEG), NO_DATE),
+        (MediaFile(tmp_path / "IMG_20240101_101010.jpg", FileKind.JPEG), exif),  # EXIF vence
+        (MediaFile(tmp_path / "foto.jpg", FileKind.JPEG), NO_DATE),
+    ]
+    result = ScanResult(tmp_path, files, [])
+    dest = tmp_path / "destino"
+    folders = [i.dest.parent for i in plan_job(None, result, _plan_options(dest)).items]
+    assert folders == [dest / "2026" / "10" / "27", dest / "2025" / "01" / "02", dest / "Sem data"]
+
+    off = plan_job(None, result, _plan_options(dest, name_dates=False))
+    assert off.items[0].dest.parent == dest / "Sem data"
+
+
+@requires_exiftool
+def test_destination_copies_bulk_marks_and_left_out_files(qtbot, qapp, tmp_path, monkeypatch):
+    from photo_organizer.core import executor
+    from photo_organizer.core.planner import DestAction, Skip
+
+    src, dst, bin_ = tmp_path / "origem", tmp_path / "destino", tmp_path / "lixeira"
+    a = make_jpeg(src / "DSC0001.JPG", "2025:04:20 07:16:07")
+    b = make_jpeg(src / "DSC0002.JPG", "2025:07:13 03:37:14")
+    existing = dst / "2025" / "04" / "20" / "DSC0001.JPG"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(a.read_bytes())  # a mesma foto já está no destino
+    bin_.mkdir()
+    monkeypatch.setattr(executor, "move_to_trash", lambda p: Path(p).replace(bin_ / Path(p).name))
+
+    settings = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    settings.setValue("lang", "pt")
+    settings.setValue("rules/mode", "move")
+    settings.setValue("rules/trash_excluded", True)
+    window = create_window(qapp, settings)
+    qtbot.addWidget(window)
+    window.set_source(src)
+    window.set_dest(dst)
+    window.scan_button.click()
+    qtbot.waitUntil(lambda: ready(window), timeout=30_000)
+
+    def item(path):
+        return next(i for i in window.plan.items if i.media.path == path)
+
+    # Iguais em resolução e tamanho: a sugestão é ficar com a do destino.
+    assert window.duplicates.count() == 1
+    assert window.duplicates.in_dest()[a] == (DestAction.KEEP, MediaFile(existing, FileKind.JPEG))
+    assert item(a).skip is Skip.KEPT
+
+    window.duplicates.mark_all()  # em massa: tudo para a pasta de duplicadas
+    qtbot.waitUntil(lambda: ready(window) and item(a).duplicate, timeout=10_000)
+    window.duplicates.mark_suggested()
+    qtbot.waitUntil(lambda: ready(window) and item(a).skip is Skip.KEPT, timeout=10_000)
+
+    window._set_included([b], False)  # desmarcada na lista
+    qtbot.waitUntil(lambda: ready(window) and item(b).trash, timeout=10_000)
+    assert window.organize_button.text().strip() == "Mover 1 item"
+
+    shown = auto_answer(monkeypatch)
+    window.organize_button.click()
+    qtbot.waitUntil(lambda: window.plan is None and window._task is None, timeout=30_000)
+    assert a.exists()  # ficou a do destino; a da origem não foi tocada
+    assert (bin_ / "DSC0002.JPG").exists()
+    assert not (dst / "2025" / "07").exists()
+    assert any("enviados para a Lixeira: 1" in t for t in shown)
+    window.close()
+
+
+def test_inspector_plays_videos_and_releases_the_file(qtbot, tmp_path):
+    from photo_organizer.ui.inspector import Inspector
+
+    service = FakeThumbnails()
+    service.request_metadata = lambda *a: None
+    inspector = Inspector(service)
+    qtbot.addWidget(inspector)
+    inspector.show()
+    video = make_mp4(tmp_path / "clip.mp4", datetime(2026, 1, 1, tzinfo=UTC))
+    item = PlanItem(MediaFile(video, FileKind.VIDEO), NO_DATE, tmp_path / "out" / "clip.mp4")
+    inspector.show_item(item)
+    assert inspector.video_bar.isVisible()
+
+    inspector.toggle_play()
+    assert not inspector._player.source().isEmpty()
+
+    photo = PlanItem(MediaFile(tmp_path / "a.jpg", FileKind.JPEG), NO_DATE, tmp_path / "a.jpg")
+    inspector.show_item(photo)  # trocar de seleção solta o vídeo (senão o Mover falha)
+    assert inspector._player.source().isEmpty()
+    assert not inspector.video_bar.isVisible()

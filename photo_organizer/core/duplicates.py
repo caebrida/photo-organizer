@@ -13,7 +13,10 @@ redimensionadas ou reexportadas. Duas fotos são duplicadas quando:
 RAW é comparado pela imagem embutida (miniatura ou prévia), extraída pelo ExifTool.
 Vídeos: só cópias idênticas (mesmo tamanho e mesmo conteúdo).
 
-Em cada grupo fica o arquivo mais antigo (data de modificação); os demais são duplicadas.
+Em cada grupo fica o original (com data, depois o maior arquivo); os demais são duplicadas.
+
+Destino: uma foto da origem que já existe no destino (mesmos critérios) vira um
+``DestMatch``. A sugestão é ficar com a de maior resolução e, empatando, a maior.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from photo_organizer.core.cache import HashCache
 from photo_organizer.core.dates import FileDate
 from photo_organizer.core.executor import hash_file
 from photo_organizer.core.metadata import MetadataReader
+from photo_organizer.core.planner import DestAction
 from photo_organizer.core.scanner import FileKind, MediaFile, path_key
 
 THRESHOLD = 6
@@ -40,6 +44,7 @@ PHASH = "phash"
 CONTENT = "blake2b"
 # Imagens embutidas no RAW, da menor para a maior: basta uma para o pHash.
 RAW_PREVIEW_TAGS = ("ThumbnailImage", "PreviewImage", "JpgFromRaw")
+_SIZE_TAG = "Composite:ImageSize"
 _LARGE_JPEG = 300_000  # bytes; acima disso decodifica em 1/4 da resolução (bem mais rápido)
 
 Progress = Callable[[int, int], None]
@@ -65,6 +70,17 @@ def find_duplicates(
     threshold: int = THRESHOLD,
     progress: Progress | None = None,
 ) -> list[DuplicateGroup]:
+    dated = {m.path for m, d in files if d.value is not None}
+    return [_keep_best(g, dated) for g in _similar(files, reader, cache, threshold, progress)]
+
+
+def _similar(
+    files: Sequence[tuple[MediaFile, FileDate]],
+    reader: MetadataReader,
+    cache: HashCache | None,
+    threshold: int,
+    progress: Progress | None,
+) -> list[list[MediaFile]]:
     photos = [(m, d) for m, d in files if m.kind is not FileKind.VIDEO]
     hashes = image_hashes([m for m, _ in photos], reader, cache, progress)
     entries = [_Entry(m, d.value, hashes[m.path]) for m, d in photos if m.path in hashes]
@@ -74,8 +90,96 @@ def find_duplicates(
         same_kind = [e for e in entries if e.media.kind is kind]
         groups += [[same_kind[i].media for i in g] for g in group_similar(same_kind, threshold)]
     groups += _identical_videos([m for m, _ in files if m.kind is FileKind.VIDEO], cache)
+    return groups
+
+
+@dataclass(frozen=True, slots=True)
+class DestMatch:
+    source: MediaFile
+    existing: MediaFile  # a que já está no destino
+    suggested: DestAction
+    pixels: tuple[int, int] = (0, 0)  # resolução da origem e da do destino
+
+
+def find_in_destination(
+    source: Sequence[tuple[MediaFile, FileDate]],
+    dest: Sequence[tuple[MediaFile, FileDate]],
+    reader: MetadataReader,
+    cache: HashCache | None = None,
+    threshold: int = THRESHOLD,
+    progress: Progress | None = None,
+) -> tuple[list[DuplicateGroup], list[DestMatch]]:
+    """Duplicadas da origem entre si e fotos da origem que já existem no destino.
+
+    Só entram na comparação os arquivos do destino que podem bater: fotos tiradas no
+    mesmo segundo de uma foto da origem e vídeos do mesmo tamanho. Assim um destino
+    grande não precisa ter todas as fotos lidas e comparadas.
+    """
+    # shortcut: uma foto da origem sem data só acha no destino as candidatas acima; achar
+    # cópia sem data em qualquer foto do destino exigiria o pHash do destino inteiro.
+    seconds = {d.value.replace(microsecond=0) for _, d in source if d.value is not None}
+    sizes = {_size(m) for m, _ in source if m.kind is FileKind.VIDEO}
+    candidates = [
+        (m, d)
+        for m, d in dest
+        if (m.kind is FileKind.VIDEO and _size(m) in sizes - {None})
+        or (m.kind is not FileKind.VIDEO and d.value and d.value.replace(microsecond=0) in seconds)
+    ]
+    in_dest = {m.path for m, _ in candidates}
+    files = [*source, *candidates]
     dated = {m.path for m, d in files if d.value is not None}
-    return [_keep_best(g, dated) for g in groups]
+    groups: list[DuplicateGroup] = []
+    pairs: list[tuple[MediaFile, MediaFile]] = []
+    for g in _similar(files, reader, cache, threshold, progress):
+        existing = [m for m in g if m.path in in_dest]
+        ours = [m for m in g if m.path not in in_dest]
+        if not existing:
+            groups.append(_keep_best(g, dated))
+        elif ours:
+            best = _keep_best(existing, dated).keep if len(existing) > 1 else existing[0]
+            pairs += [(m, best) for m in ours]
+    return groups, _suggest(pairs, reader)
+
+
+def _suggest(pairs: list[tuple[MediaFile, MediaFile]], reader: MetadataReader) -> list[DestMatch]:
+    """Fica a de maior resolução; empatando, o maior arquivo; empatando, a do destino.
+    Só uma foto da origem pode substituir cada foto do destino: a melhor delas."""
+    paths = list({m.path: m for pair in pairs for m in pair})
+    pixels = _pixels(reader, paths) if paths else {}
+
+    def quality(m: MediaFile) -> tuple[int, int]:
+        return pixels.get(path_key(m.path), 0), _size(m) or 0
+
+    matches: list[DestMatch] = []
+    replaced: set[Path] = set()
+    for src, existing in sorted(pairs, key=lambda p: quality(p[0]), reverse=True):
+        better = quality(src) > quality(existing) and existing.path not in replaced
+        if better:
+            replaced.add(existing.path)
+        action = DestAction.REPLACE if better else DestAction.KEEP
+        matches.append(DestMatch(src, existing, action, (quality(src)[0], quality(existing)[0])))
+    order = {m.path: i for i, (m, _) in enumerate(pairs)}
+    return sorted(matches, key=lambda d: order[d.source.path])
+
+
+def _pixels(reader: MetadataReader, paths: list[Path]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    results = (
+        r for i in range(0, len(paths), 500) for r in reader.read(paths[i : i + 500], [_SIZE_TAG])
+    )
+    for r in results:
+        value = str(r.get(_SIZE_TAG, ""))  # com -n: "6000 4000"
+        parts = value.replace("x", " ").split()
+        if len(parts) == 2 and all(p.isdigit() for p in parts):
+            out[path_key(r["SourceFile"])] = int(parts[0]) * int(parts[1])
+    return out
+
+
+def _size(m: MediaFile) -> int | None:
+    try:
+        return m.path.stat().st_size
+    except OSError:
+        return None
 
 
 def duplicate_paths(groups: Sequence[DuplicateGroup]) -> set[Path]:

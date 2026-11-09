@@ -7,6 +7,7 @@ from photo_organizer.core.dates import (
     NO_DATE,
     DateSource,
     FileDate,
+    date_from_name,
     parse_date,
     read_dates,
     resolve_date,
@@ -88,6 +89,27 @@ def test_video_prefers_creation_date_with_offset():
 
 def test_nothing_found_means_no_date():
     assert resolve_date({"File:FileModifyDate": "2025:01:01 00:00:00-03:00"}) is NO_DATE
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("IMG_20261027_143208.jpg", datetime(2026, 10, 27, 14, 32, 8)),
+        ("IMG-20261027-WA0003.jpg", datetime(2026, 10, 27)),  # WhatsApp: só o dia
+        ("PXL_20261027_143208123.jpg", datetime(2026, 10, 27, 14, 32, 8)),
+        ("Screenshot_2026-10-27-14-32-08.png", datetime(2026, 10, 27, 14, 32, 8)),
+        ("2026-10-27 14.32.08.jpg", datetime(2026, 10, 27, 14, 32, 8)),
+        ("DSC01234.JPG", None),
+        ("IMG_20261327.jpg", None),  # mês 13
+        ("VID_20240230.mp4", None),  # 30 de fevereiro
+        ("1698412345678.jpg", None),  # número colado: não é data
+        ("x120261027.jpg", None),
+    ],
+)
+def test_date_from_file_name(name, expected):
+    got = date_from_name(name)
+    assert got.value == expected
+    assert got.source is (DateSource.FILENAME if expected else None)
 
 
 # --- read_dates: com ExifTool e arquivos sintéticos -----------------------------------

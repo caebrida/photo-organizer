@@ -389,6 +389,14 @@ QSplitter::handle {
 #DupCard[keep="true"] {
     border-color: @GREEN;
 }
+#DupCard[dest="true"] {
+    border-color: @VIOLET;
+}
+#DestChip {
+    color: @VIOLET;
+    font-weight: 700;
+    font-size: 8pt;
+}
 #KeepChip {
     color: @GREEN;
     font-weight: 700;
