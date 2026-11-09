@@ -35,7 +35,9 @@ Requirements: Windows 10 or 11, 64-bit.
 
 1. **Choose the source** (`Ctrl+O`): the folder with your photos. Subfolders are included.
 2. **Scan** (`F5`): the app reads each file's date and looks for duplicates. The list shows how many files have a date and where it came from.
-3. **Choose the destination** (`Ctrl+D`) and adjust the rules in the side panel. The plan is rebuilt after every change and appears in the list before you confirm.
+3. **Choose the destination** (`Ctrl+D`) and adjust the rules in the side panel. The app also checks whether each photo already exists in the destination. The plan is rebuilt after every change and appears in the list before you confirm.
+   - Uncheck a card, or a whole day, to leave those files out. Select several and press `Space`, or right-click, to change many at once.
+   - Click a video in the list, then ▶ in the side panel, to watch it without leaving the app.
 4. **Organize** (`Ctrl+Enter`): confirm move or copy. When it finishes, the app shows a summary and offers to open the report, show failures, or open the destination.
 
 The interface follows the Windows language (English or Portuguese). Switch it under **View > Language**.
@@ -50,6 +52,7 @@ Each file's date comes from the first source that has one, in this order:
 2. The XMP sidecar (the `.xmp` next to the file)
 3. XMP embedded in the file
 4. The video date (QuickTime or RIFF)
+5. A date in the file name, such as `IMG_20261027_143208.jpg`, `IMG-20261027-WA0003.jpg` (WhatsApp), or `Screenshot_2026-10-27-14-32-08.png`. You can turn this off in the side panel.
 
 A file with none of these dates goes to the `No date` folder. The file's modified date is never used, because copies and downloads change it.
 
@@ -98,7 +101,15 @@ The app compares what the photos look like (a perceptual hash), so it finds exac
 
 An undated copy, like the ones WhatsApp creates, links only to the dated photo it most resembles. Videos count as duplicates only when they are exact copies.
 
-In each group, the original photo (dated and largest) stays in the regular destination, and the others go to `Duplicates - Review`, under the same date structure. The **Duplicates** tab shows each group side by side, with file sizes and dates, and you choose photo by photo which ones go to that folder. The app never deletes duplicates.
+In each group, the original photo (dated and largest) stays in the regular destination, and the others go to `Duplicates - Review`, under the same date structure. The **Duplicates** tab shows each group side by side, with file sizes and dates, and you choose photo by photo which ones go to that folder. **Mark all** applies one choice to every group: the suggested ones only, all of them, or none.
+
+**Photos already in the destination.** The app also searches the whole destination for each source photo. A match shows up in the **Duplicates** tab with an `ALREADY IN DESTINATION` label and three choices:
+
+- **Keep the destination photo**: the source photo is not copied or moved.
+- **Send to duplicates**: the source photo goes to `Duplicates - Review`.
+- **Replace**: the source photo takes the destination photo's place, and the old one goes to the Recycle Bin.
+
+The suggestion is to keep whichever photo has the higher resolution, and the larger file on a tie. The source photo replaces the destination one only when it is clearly better.
 
 Comparison results are cached, so scanning the same folder again is fast.
 
@@ -123,11 +134,12 @@ Analysis runs on your computer. No photo is sent to the internet.
 ### File safety
 
 - **Plan first.** No file is touched until you confirm the full plan.
-- **Nothing is overwritten.** If a name already exists at the destination, the file gets `_1`, `_2`, and so on, and its sidecar gets the same suffix.
+- **Nothing is overwritten by accident.** If a name already exists at the destination, the file gets `_1`, `_2`, and so on, and its sidecar gets the same suffix. A destination photo is replaced only when you choose **Replace**, and then it goes to the Recycle Bin.
+- **Recycle Bin, never permanent deletion.** When moving, you can send the files you unchecked to the Recycle Bin. This only works on local drives: USB drives and network folders have no Recycle Bin, so the file stays where it is and the report lists it as an error.
 - **Verified copies.** When copying, or moving to another drive, the app rereads the copy and checks its hash before giving it the final name. The source is deleted only after that.
 - **Files already in the right place** are skipped.
 - **Long paths** (over 260 characters) work.
-- **CSV report** in the destination folder, written file by file: status, operation, source, destination, sidecars, date, date source, type, duplicate, and error. It uses `;` as the separator, which Excel opens directly in Portuguese and most European locales.
+- **CSV report** in the destination folder, written file by file: status, operation, source, destination, sidecars, date, date source, type, duplicate, error, and a note (for example, left out or replaced). It uses `;` as the separator, which Excel opens directly in Portuguese and most European locales.
 
 There is no undo. The report is the record of where each file went.
 
@@ -233,6 +245,7 @@ The executable bundles these components, each under its own license:
 |---|---|---|
 | [ExifTool](https://exiftool.org/) | reading metadata and writing XMP | Artistic License or GPL |
 | [Qt for Python (PySide6)](https://doc.qt.io/qtforpython/) | interface | LGPL v3 |
+| [FFmpeg](https://ffmpeg.org/) (bundled with Qt Multimedia) | video playback | LGPL v2.1+ |
 | [OpenCV](https://opencv.org/) | images and running the models | Apache 2.0 |
 | [SigLIP 2](https://huggingface.co/google/siglip2-base-patch16-224) (Google) | scene and content tags | Apache 2.0 |
 | [YOLOX-s](https://huggingface.co/opencv/object_detection_yolox) (OpenCV Model Zoo) | people detection | Apache 2.0 |
