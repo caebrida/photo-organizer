@@ -6,6 +6,8 @@ leituras, em lotes, o que é essencial para dezenas de milhares de arquivos.
 
 from __future__ import annotations
 
+import errno
+import logging
 import os
 import sys
 import threading
@@ -14,6 +16,9 @@ from pathlib import Path
 
 import exiftool
 import exiftool.exiftool as _pyexiftool
+from exiftool.exceptions import ExifToolOutputEmptyError
+
+log = logging.getLogger(__name__)
 
 
 class ExifToolNotFoundError(RuntimeError):
@@ -147,7 +152,21 @@ class MetadataReader:
         paths = [str(f) for f in files]
         if not paths:
             return []
-        return self._et.get_tags(paths, tags=tags, params=params)
+        try:
+            return self._et.get_tags(paths, tags=tags, params=params)
+        except ExifToolOutputEmptyError:
+            # Saída vazia: nenhum arquivo do lote pôde ser lido (rede caiu, arquivo sumiu ou
+            # bloqueado). Divide o lote para salvar os legíveis em vez de perder a tarefa.
+            folder = Path(paths[0]).parent
+            if not folder.exists():  # compartilhamento fora do ar: dividir só somaria esperas
+                message = "Pasta inacessível (a rede caiu?)"
+                raise OSError(errno.ENOENT, message, str(folder)) from None
+            if len(paths) == 1:
+                stderr = (self._et.last_stderr or "").strip().splitlines()
+                log.warning("ExifTool não leu %s: %s", paths[0], stderr[0] if stderr else "")
+                return []
+            mid = len(paths) // 2
+            return self.read(paths[:mid], tags, params) + self.read(paths[mid:], tags, params)
 
     def write(self, path: str | Path, params: list[str]) -> None:
         """Executa um comando de escrita (ex.: ``["-XMP-dc:Subject+=praia"]``) num arquivo.

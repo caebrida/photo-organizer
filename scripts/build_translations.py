@@ -77,7 +77,10 @@ EN = {
         "password, then try again."
     ),
     "… e mais {n}": "… and {n} more",
-    "{n} pastas não puderam ser lidas e ficaram de fora:": "{n} folders could not be read and were skipped:",
+    "{n} pastas ou arquivos não puderam ser lidos e ficaram de fora:": (
+        "{n} folders or files could not be read and were skipped:"
+    ),
+    "o arquivo não pôde ser aberto": "the file could not be opened",
     "Nenhuma foto ou vídeo encontrado": "No photos or videos found",
     "A origem não tem JPEG, RAW ou vídeos suportados.": "The source has no supported JPEG, RAW or video files.",
     "Escolha o destino": "Choose the destination",

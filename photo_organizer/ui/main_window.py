@@ -162,6 +162,9 @@ class MainWindow(QMainWindow):
         self.scan_result: ScanResult | None = None
         self.dest_check: DestCheck | None = None  # o que o destino já tem
         self.excluded: set[Path] = set()  # desmarcados na lista: ficam de fora
+        # Conteúdo das pastas do destino, reaproveitado entre planos; um dict novo (e não
+        # clear()) quando o destino muda, porque um plano em andamento ainda usa o velho.
+        self._listings: dict[str, frozenset[str]] = {}
         self.plan: Plan | None = None
         self._task: Task | None = None
         self.last_summary: ExecutionSummary | None = None
@@ -434,6 +437,7 @@ class MainWindow(QMainWindow):
 
     def set_dest(self, path: Path | None) -> None:
         changed = path != self.dest
+        self._listings = {}
         self.dest = path
         self.dest_pill.set_path(path)
         self.rules.set_dest(path)
@@ -468,6 +472,7 @@ class MainWindow(QMainWindow):
 
     def _on_scanned(self, result: ScanResult) -> None:
         self._task = None
+        self._listings = {}  # escanear de novo é o "atualizar": o destino pode ter mudado
         self._set_busy(None)
         self.scan_result = result
         self.rules.set_counts(result.ext_counts)
@@ -539,10 +544,11 @@ class MainWindow(QMainWindow):
         self.schedule_plan()
 
     def _warn_unreadable(self, unreadable: list[tuple[str, str]]) -> None:
-        lines = [f"• {folder} — {reason}" for folder, reason in unreadable[:8]]
+        fallback = self.tr("o arquivo não pôde ser aberto")
+        lines = [f"• {path} — {reason or fallback}" for path, reason in unreadable[:8]]
         if len(unreadable) > 8:
             lines.append(self.tr("… e mais {n}").format(n=len(unreadable) - 8))
-        intro = self.tr("{n} pastas não puderam ser lidas e ficaram de fora:").format(
+        intro = self.tr("{n} pastas ou arquivos não puderam ser lidos e ficaram de fora:").format(
             n=len(unreadable)
         )
         QMessageBox.warning(self, "Photo Organizer", intro + "\n\n" + "\n".join(lines))
@@ -583,6 +589,7 @@ class MainWindow(QMainWindow):
             not_duplicates=self.duplicates.not_duplicates(),
             in_dest=self.duplicates.in_dest(),
             excluded=frozenset(self.excluded),
+            listings=self._listings,
         )
         self.duplicates.folder_name = options.duplicates_folder
         self._plan_gen += 1
@@ -699,6 +706,7 @@ class MainWindow(QMainWindow):
 
     def _on_executed(self, summary: ExecutionSummary) -> None:
         self._task = None
+        self._listings = {}  # o Organizar criou pastas e arquivos no destino
         self._set_busy(None)
         c, k = summary.counts, summary.kinds
         lines = [

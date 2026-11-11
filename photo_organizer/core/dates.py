@@ -7,18 +7,25 @@
 4. datas de vídeo (QuickTime / RIFF);
 5. nenhuma: o arquivo vai para ``Sem data``.
 
+Arquivos que o ExifTool não devolveu (sumiram, rede caiu, sem permissão) não são "sem
+data": ficam de fora e vão para a lista ``unreadable`` de quem chamou. Com um ``HashCache``,
+a data lida fica guardada e não volta à rede enquanto o arquivo e o sidecar não mudarem.
+
 A data devolvida é a hora local em que a foto foi feita (sem fuso), que é o que define a
 pasta. A única conversão de fuso é a do ``QuickTime:CreateDate``, que por norma é UTC.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 
+from photo_organizer.core.cache import HashCache
 from photo_organizer.core.metadata import MetadataReader
 from photo_organizer.core.scanner import MediaFile, path_key
 
@@ -135,29 +142,86 @@ def resolve_date(file_meta: dict, sidecar_meta: dict | None = None) -> FileDate:
     return NO_DATE
 
 
+DATE_CACHE = "date-v1"  # mude a versão se a ordem de prioridade das datas mudar
+
+
 def read_dates(
-    reader: MetadataReader, files: Iterable[MediaFile], batch_size: int = 500
+    reader: MetadataReader,
+    files: Iterable[MediaFile],
+    batch_size: int = 500,
+    cache: HashCache | None = None,
+    unreadable: list[MediaFile] | None = None,
 ) -> Iterator[tuple[MediaFile, FileDate]]:
-    """Lê as datas em lotes e gera ``(arquivo, data)`` na mesma ordem da entrada."""
+    """Lê as datas em lotes e gera ``(arquivo, data)`` na mesma ordem da entrada.
+
+    Os arquivos que o ExifTool não conseguiu abrir não saem: vão para ``unreadable``.
+    """
     batch: list[MediaFile] = []
     for f in files:
         batch.append(f)
         if len(batch) >= batch_size:
-            yield from _read_batch(reader, batch)
+            yield from _read_batch(reader, batch, cache, unreadable)
             batch = []
     if batch:
-        yield from _read_batch(reader, batch)
+        yield from _read_batch(reader, batch, cache, unreadable)
 
 
 def _read_batch(
-    reader: MetadataReader, batch: list[MediaFile]
+    reader: MetadataReader,
+    batch: list[MediaFile],
+    cache: HashCache | None,
+    unreadable: list[MediaFile] | None,
 ) -> Iterator[tuple[MediaFile, FileDate]]:
-    file_meta = _by_path(reader.read([f.path for f in batch], FILE_TAGS))
-    sidecars = [f.sidecar for f in batch if f.sidecar is not None]
+    known = {f.path: d for f in batch if cache and (d := _cached(cache, f)) is not None}
+    todo = [f for f in batch if f.path not in known]
+    file_meta = _by_path(reader.read([f.path for f in todo], FILE_TAGS)) if todo else {}
+    sidecars = [f.sidecar for f in todo if f.sidecar is not None]
     sidecar_meta = _by_path(reader.read(sidecars, SIDECAR_TAGS)) if sidecars else {}
+    new: list[tuple[Path, bytes]] = []
     for f in batch:
+        if f.path in known:
+            yield f, known[f.path]
+            continue
+        meta = file_meta.get(path_key(f.path))
+        if meta is None:  # o ExifTool devolve até arquivo corrompido; faltar é não abrir
+            if unreadable is not None:
+                unreadable.append(f)
+            continue
         side = sidecar_meta.get(path_key(f.sidecar)) if f.sidecar else None
-        yield f, resolve_date(file_meta.get(path_key(f.path), {}), side)
+        date = resolve_date(meta, side)
+        yield f, date
+        if cache and (f.sidecar is None or side is not None):
+            new.append((f.path, _encode(date, _stamp(f.sidecar))))
+    if cache and new:
+        cache.put_many(DATE_CACHE, new)
+
+
+def _stamp(sidecar: Path | None) -> str:
+    """Tamanho e modificação do sidecar: editar o .xmp no Lightroom invalida a data."""
+    if sidecar is None:
+        return ""
+    try:
+        st = sidecar.stat()
+    except OSError:
+        return "?"
+    return f"{st.st_size}:{st.st_mtime_ns}"
+
+
+def _encode(date: FileDate, stamp: str) -> bytes:
+    value = date.value.isoformat() if date.value else None
+    return json.dumps([value, date.source, date.tag, stamp]).encode()
+
+
+def _cached(cache: HashCache, f: MediaFile) -> FileDate | None:
+    raw = cache.get(f.path, DATE_CACHE)
+    if raw is None:
+        return None
+    value, source, tag, stamp = json.loads(raw)
+    if stamp == "?" or stamp != _stamp(f.sidecar):
+        return None
+    if value is None:
+        return NO_DATE
+    return FileDate(datetime.fromisoformat(value), DateSource(source), tag)
 
 
 def _by_path(results: list[dict]) -> dict[str, dict]:

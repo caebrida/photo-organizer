@@ -22,7 +22,7 @@ Destino: uma foto da origem que já existe no destino (mesmos critérios) vira u
 from __future__ import annotations
 
 import base64
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -35,7 +35,7 @@ import numpy as np
 from photo_organizer.core.cache import HashCache
 from photo_organizer.core.dates import FileDate
 from photo_organizer.core.executor import hash_file
-from photo_organizer.core.images import heic_image, is_heic
+from photo_organizer.core.images import _ROTATIONS, heic_image, is_heic
 from photo_organizer.core.metadata import MetadataReader
 from photo_organizer.core.planner import DestAction
 from photo_organizer.core.scanner import FileKind, MediaFile, path_key
@@ -45,6 +45,8 @@ PHASH = "phash"
 CONTENT = "blake2b"
 # Imagens embutidas no RAW, da menor para a maior: basta uma para o pHash.
 RAW_PREVIEW_TAGS = ("ThumbnailImage", "PreviewImage", "JpgFromRaw")
+# JPEG: a miniatura do EXIF (~10 KB) dá o mesmo pHash da foto inteira (vários MB pela rede).
+JPEG_PREVIEW_TAGS = ("ThumbnailImage",)
 _SIZE_TAG = "Composite:ImageSize"
 _LARGE_JPEG = 300_000  # bytes; acima disso decodifica em 1/4 da resolução (bem mais rápido)
 
@@ -83,7 +85,7 @@ def _similar(
     progress: Progress | None,
 ) -> list[list[MediaFile]]:
     photos = [(m, d) for m, d in files if m.kind is not FileKind.VIDEO]
-    hashes = image_hashes([m for m, _ in photos], reader, cache, progress)
+    hashes = image_hashes(_comparable(photos), reader, cache, progress)
     entries = [_Entry(m, d.value, hashes[m.path]) for m, d in photos if m.path in hashes]
 
     groups: list[list[MediaFile]] = []
@@ -92,6 +94,21 @@ def _similar(
         groups += [[same_kind[i].media for i in g] for g in group_similar(same_kind, threshold)]
     groups += _identical_videos([m for m, _ in files if m.kind is FileKind.VIDEO], cache)
     return groups
+
+
+def _comparable(photos: Sequence[tuple[MediaFile, FileDate]]) -> list[MediaFile]:
+    """Só as fotos que têm com quem comparar: as datadas que dividem o segundo com outra do
+    mesmo tipo e, se o tipo tiver foto sem data, todas (a sem data procura a datada mais
+    parecida). Numa biblioteca sem fotos sem data, quase nenhuma foto precisa ser lida."""
+    out: list[MediaFile] = []
+    for kind in (FileKind.JPEG, FileKind.RAW):
+        same = [(m, d.value) for m, d in photos if m.kind is kind]
+        if any(v is None for _, v in same):
+            out += [m for m, _ in same]
+            continue
+        per_second = Counter(v.replace(microsecond=0) for _, v in same if v)
+        out += [m for m, v in same if v and per_second[v.replace(microsecond=0)] > 1]
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +228,15 @@ def image_hashes(
 
     new: dict[Path, int] = {}
     jpegs = [f.path for f in pending if f.kind is FileKind.JPEG]
+    with_thumb = [p for p in jpegs if not is_heic(p)]
+    for start in range(0, len(with_thumb), 100):
+        chunk = with_thumb[start : start + 100]
+        found = _hash_previews(chunk, reader, JPEG_PREVIEW_TAGS, upright=True)
+        new.update(found)
+        done += len(found)
+        if progress:
+            progress(done, total)
+    jpegs = [p for p in jpegs if p not in new]  # sem miniatura (ex.: WhatsApp) ou HEIC
     with ThreadPoolExecutor() as pool:  # o OpenCV libera o GIL ao decodificar
         for path, h in zip(jpegs, pool.map(_hash_jpeg_file, jpegs), strict=True):
             done += 1
@@ -221,7 +247,7 @@ def image_hashes(
     raws = [f.path for f in pending if f.kind is FileKind.RAW]
     for start in range(0, len(raws), 100):
         chunk = raws[start : start + 100]
-        new.update(_hash_raw_previews(chunk, reader))
+        new.update(_hash_previews(chunk, reader))
         done += len(chunk)
         if progress:
             progress(done, total)
@@ -266,16 +292,30 @@ def _hash_jpeg_file(path: Path) -> int | None:
     return phash_bytes(data, reduced=len(data) > _LARGE_JPEG)
 
 
-def _hash_raw_previews(paths: list[Path], reader: MetadataReader) -> dict[Path, int]:
+def _hash_previews(
+    paths: list[Path],
+    reader: MetadataReader,
+    tags: Sequence[str] = RAW_PREVIEW_TAGS,
+    upright: bool = False,
+) -> dict[Path, int]:
+    """pHash da imagem embutida (lida pelo ExifTool, sem ler o arquivo inteiro).
+
+    ``upright``: gira pela tag Orientation. A miniatura de uma foto em pé fica deitada, mas
+    o OpenCV desvira o JPEG inteiro; sem girar, ela não bateria com a cópia do WhatsApp nem
+    com os hashes já no cache. RAW não gira: só compara com RAW, todos deitados.
+    """
     out: dict[Path, int] = {}
     missing = list(paths)
-    for tag in RAW_PREVIEW_TAGS:  # uma tag por vez: não transfere prévias grandes à toa
+    for tag in tags:  # uma tag por vez: não transfere prévias grandes à toa
         if not missing:
             break
-        by_path = {path_key(r["SourceFile"]): r for r in reader.read(missing, [tag], ["-b"])}
+        fields = [tag, "EXIF:Orientation"] if upright else [tag]
+        by_path = {path_key(r["SourceFile"]): r for r in reader.read(missing, fields, ["-b"])}
         still = []
         for p in missing:
-            h = _decode_b64_hash(_any_tag(by_path.get(path_key(p), {}), tag))
+            meta = by_path.get(path_key(p), {})
+            rotation = _ROTATIONS.get(meta.get("EXIF:Orientation")) if upright else None
+            h = _decode_b64_hash(_any_tag(meta, tag), rotation)
             if h is None:
                 still.append(p)
             else:
@@ -288,11 +328,16 @@ def _any_tag(meta: dict, tag: str) -> object:
     return next((v for k, v in meta.items() if k.endswith(f":{tag}")), None)
 
 
-def _decode_b64_hash(value: object) -> int | None:
+def _decode_b64_hash(value: object, rotation: int | None = None) -> int | None:
     if not isinstance(value, str) or not value.startswith("base64:"):
         return None
     data = base64.b64decode(value[7:])
-    return phash_bytes(data, reduced=len(data) > _LARGE_JPEG)
+    if rotation is None:
+        return phash_bytes(data, reduced=len(data) > _LARGE_JPEG)
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_GRAYSCALE)
+    if img is None or img.size == 0:
+        return None
+    return int.from_bytes(phash(_trim_dark_borders(cv2.rotate(img, rotation))).tobytes(), "big")
 
 
 def _trim_dark_borders(img: np.ndarray) -> np.ndarray:

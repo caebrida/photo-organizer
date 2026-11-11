@@ -88,7 +88,7 @@ class ScanResult:
     files: list[tuple[MediaFile, FileDate]]
     groups: list[DuplicateGroup]
     ext_counts: Counter[str] = field(default_factory=Counter)
-    unreadable: list[tuple[str, str]] = field(default_factory=list)  # (pasta, motivo)
+    unreadable: list[tuple[str, str]] = field(default_factory=list)  # (pasta/arquivo, motivo)
 
 
 def extension(media: MediaFile) -> str:
@@ -109,15 +109,16 @@ def scan_job(task: Task, source: Path, exclude: Path | None, cache_path: Path) -
     task.report(len(files), 0, "scan")
 
     dated: list[tuple[MediaFile, FileDate]] = []
-    with MetadataReader() as reader:
-        for pair in read_dates(reader, files, batch_size=200):
+    failed: list[MediaFile] = []
+    with MetadataReader() as reader, HashCache(cache_path) as cache:
+        for pair in read_dates(reader, files, 200, cache, failed):
             dated.append(pair)
             if len(dated) % 200 == 0:
                 task.report(len(dated), len(files), "dates")
-        with HashCache(cache_path) as cache:
-            groups = find_duplicates(
-                dated, reader, cache, progress=lambda d, t: task.report(d, t, "hashes")
-            )
+        groups = find_duplicates(
+            dated, reader, cache, progress=lambda d, t: task.report(d, t, "hashes")
+        )
+    unreadable += [(str(m.path), "") for m in failed]  # "": o ExifTool não abriu o arquivo
     counts = Counter(extension(m) for m, _ in dated)
     return ScanResult(Path(source), dated, groups, counts, unreadable)
 
@@ -141,20 +142,19 @@ def dest_check_job(task: Task, result: ScanResult, dest: Path, cache_path: Path)
         files.append(media)
         if len(files) % 250 == 0:
             task.report(len(files), 0, "dest_scan")
-    with MetadataReader() as reader:
+    with MetadataReader() as reader, HashCache(cache_path) as cache:
         dated: list[tuple[MediaFile, FileDate]] = []
-        for pair in read_dates(reader, files, batch_size=200):
+        for pair in read_dates(reader, files, 200, cache):  # ilegível no destino: só não compara
             dated.append(pair)
             if len(dated) % 200 == 0:
                 task.report(len(dated), len(files), "dest_dates")
-        with HashCache(cache_path) as cache:
-            groups, matches = find_in_destination(
-                result.files,
-                dated,
-                reader,
-                cache,
-                progress=lambda d, t: task.report(d, t, "hashes"),
-            )
+        groups, matches = find_in_destination(
+            result.files,
+            dated,
+            reader,
+            cache,
+            progress=lambda d, t: task.report(d, t, "hashes"),
+        )
     return DestCheck(dest, groups, matches)
 
 
@@ -175,6 +175,7 @@ class PlanOptions:
     excluded: frozenset[Path] = frozenset()  # desmarcados na lista
     trash_excluded: bool = False  # ao mover, desmarcados vão para a Lixeira
     in_dest: Mapping[Path, tuple[DestAction, MediaFile]] = field(default_factory=dict)
+    listings: dict[str, frozenset[str]] = field(default_factory=dict)  # pastas do destino
 
     def rule_settings(self) -> RuleSettings:
         return RuleSettings(self.pattern, self.lang, self.no_date_folder, self.duplicates_folder)
@@ -203,6 +204,7 @@ def plan_job(
         excluded=options.excluded,
         trash_excluded=options.trash_excluded,
         in_dest=in_dest,
+        listings=options.listings,
     )
 
 

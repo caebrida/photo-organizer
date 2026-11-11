@@ -11,7 +11,7 @@ from conftest import SAMPLES, exiftool, make_mp4, requires_exiftool
 
 from photo_organizer.core import duplicates
 from photo_organizer.core.cache import HashCache
-from photo_organizer.core.dates import read_dates
+from photo_organizer.core.dates import NO_DATE, FileDate, read_dates
 from photo_organizer.core.duplicates import (
     _Entry,
     duplicate_paths,
@@ -278,3 +278,70 @@ def test_unreadable_heic_has_no_image(tmp_path):
     bad.write_bytes(b"\x00\x00\x00\x18ftypheic" + b"lixo" * 10)
     assert load_image(bad, FileKind.JPEG, 256, None) is None
     assert duplicates._hash_jpeg_file(bad) is None
+
+
+def test_only_photos_that_can_match_are_hashed():
+    from photo_organizer.core.duplicates import _comparable
+
+    def m(name: str, kind: FileKind = FileKind.JPEG) -> MediaFile:
+        return MediaFile(Path(name), kind)
+
+    t = datetime(2025, 1, 1, 10, 0, 0)
+    a, b, c, r = m("a.jpg"), m("b.jpg"), m("c.jpg"), m("r.arw", FileKind.RAW)
+    photos = [
+        (a, FileDate(t)),
+        (b, FileDate(t.replace(microsecond=5000))),
+        (c, FileDate(t + timedelta(seconds=1))),  # sozinha no segundo: não precisa ser lida
+        (r, FileDate(t)),  # RAW não compara com JPEG
+    ]
+    assert _comparable(photos) == [a, b]
+    whats = m("whats.jpg")  # sem data: procura a datada mais parecida, então todas entram
+    assert set(_comparable([*photos, (whats, NO_DATE)])) == {a, b, c, whats}
+
+
+@requires_exiftool
+def test_jpeg_hash_comes_from_the_exif_thumbnail(tmp_path, monkeypatch):
+    """A miniatura do EXIF (~10 KB) substitui a leitura da foto inteira pela rede."""
+    base = photo(9)
+    d = "2025:04:20 07:16:07"
+    big = save(tmp_path / "a.jpg", base, date=d)
+    thumb = tmp_path / "t.bin"
+    thumb.write_bytes(cv2.imencode(".jpg", cv2.resize(base, (160, 107)))[1].tobytes())
+    exiftool(f"-ThumbnailImage<={thumb}", big)
+    thumb.unlink()
+    full = duplicates._hash_jpeg_file(big)
+    save(tmp_path / "b.jpg", base, 70, d)  # cópia sem miniatura: lê o arquivo inteiro
+
+    read_whole: list[str] = []
+    real = duplicates._hash_jpeg_file
+    monkeypatch.setattr(
+        duplicates, "_hash_jpeg_file", lambda p: read_whole.append(p.name) or real(p)
+    )
+    with MetadataReader() as reader:
+        files = list(read_dates(reader, scan(tmp_path)))
+        hashes = duplicates.image_hashes([m for m, _ in files], reader)
+        groups = find_duplicates(files, reader)
+    assert read_whole == ["b.jpg", "b.jpg"]
+    assert bin(hashes[big] ^ full).count("1") <= duplicates.THRESHOLD
+    [group] = groups
+    assert {group.keep.path.name, *(m.path.name for m in group.duplicates)} == {"a.jpg", "b.jpg"}
+
+
+@requires_exiftool
+def test_thumbnail_of_a_portrait_photo_still_matches_its_upright_copy(tmp_path):
+    """Foto em pé: a câmera grava os pixels deitados (Orientation 6), inclusive na miniatura,
+    e o OpenCV desvira o JPEG inteiro. A cópia do WhatsApp já vem em pé."""
+    base = photo(11)
+    d = "2025:04:20 07:16:07"
+    camera = save(tmp_path / "camera.jpg", base, date=d)
+    thumb = tmp_path / "t.bin"
+    thumb.write_bytes(cv2.imencode(".jpg", cv2.resize(base, (160, 107)))[1].tobytes())
+    exiftool(f"-ThumbnailImage<={thumb}", "-Orientation#=6", camera)
+    thumb.unlink()
+    save(tmp_path / "whats.jpg", cv2.rotate(base, cv2.ROTATE_90_CLOCKWISE), 70, d)
+    with MetadataReader() as reader:
+        files = list(read_dates(reader, scan(tmp_path)))
+        hashes = duplicates.image_hashes([m for m, _ in files], reader)
+        groups = find_duplicates(files, reader)
+    assert bin(hashes[camera] ^ duplicates._hash_jpeg_file(camera)).count("1") <= 6
+    assert names(groups) == {("camera.jpg", frozenset({"whats.jpg"}))}

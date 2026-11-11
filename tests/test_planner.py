@@ -98,3 +98,23 @@ def test_duplicates_go_to_their_folder(tmp_path):
     assert plan.items[1].duplicate
     assert plan.items[1].dest == tmp_path / "dst/Duplicadas - Validar/2026/10/27/b.jpg"
     assert not plan.items[0].duplicate
+
+
+def test_destination_folders_are_listed_once_across_plans(tmp_path, monkeypatch):
+    """Cada ajuste nas regras refaz o plano; numa rede, relistar as pastas a cada clique
+    demora. As listagens passadas em ``listings`` valem para os próximos planos."""
+    import os
+
+    from photo_organizer.core import planner
+
+    dst = tmp_path / "dst"
+    touch(dst / "2026" / "10" / "27" / "a.JPG")  # já existe lá
+    f = media(tmp_path / "src" / "a.JPG", FileKind.JPEG)
+    calls: list[str] = []
+    real = os.listdir
+    monkeypatch.setattr(planner.os, "listdir", lambda p: calls.append(p) or real(p))
+    listings: dict = {}
+    for _ in range(3):
+        [item] = build_plan([(f, DATE)], dst, SETTINGS, listings=listings).items
+        assert item.dest.name == "a_1.JPG"  # o nome reservado num plano não vaza para o outro
+    assert len(calls) == 1

@@ -1,8 +1,11 @@
+import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from conftest import SAMPLES, make_jpeg, make_mp4, make_sidecar, requires_exiftool
 
+from photo_organizer.core.cache import HashCache
 from photo_organizer.core.dates import (
     NO_DATE,
     DateSource,
@@ -15,7 +18,7 @@ from photo_organizer.core.dates import (
 from photo_organizer.core.metadata import MetadataReader
 from photo_organizer.core.pattern import FolderPattern
 from photo_organizer.core.rules import RuleSettings, destination_dir
-from photo_organizer.core.scanner import FileKind, scan
+from photo_organizer.core.scanner import FileKind, MediaFile, scan
 
 # --- parse_date / resolve_date: sem ExifTool ------------------------------------------
 
@@ -167,3 +170,42 @@ def test_real_samples_have_exif_date_and_expected_folder(tmp_path):
         expected = tmp_path / f"{d.value:%Y}" / f"{d.value:%m}" / f"{d.value:%d}"
         expected /= {FileKind.JPEG: "", FileKind.RAW: "RAW", FileKind.VIDEO: "Video"}[f.kind]
         assert folder == expected, f.path.name
+
+
+@requires_exiftool
+def test_unreadable_files_are_reported_not_undated(tmp_path):
+    """Arquivo que o ExifTool não abre (sumiu, rede caiu) não pode virar "sem data": iria
+    para a pasta Sem data ao organizar."""
+    ok = MediaFile(make_jpeg(tmp_path / "ok.jpg", "2025:04:20 07:16:07"), FileKind.JPEG)
+    gone = MediaFile(tmp_path / "sumiu.jpg", FileKind.JPEG)
+    failed: list[MediaFile] = []
+    with MetadataReader() as reader:
+        got = list(read_dates(reader, [ok, gone], unreadable=failed))
+    assert [f.path.name for f, _ in got] == ["ok.jpg"]
+    assert failed == [gone]
+
+
+@requires_exiftool
+def test_date_cache_skips_exiftool_until_the_sidecar_changes(tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    make_jpeg(src / "a.jpg")
+    side = make_sidecar(src / "a.jpg.xmp", "2026-10-27T14:32:08")
+    make_jpeg(src / "b.jpg", "2025:04:20 07:16:07")
+    make_jpeg(src / "c.jpg")  # sem data também vai para o cache
+    with MetadataReader() as reader, HashCache(tmp_path / "cache.sqlite") as cache:
+        first = {f.path.name: d for f, d in read_dates(reader, scan(src), cache=cache)}
+        calls: list[list] = []
+        real = reader.read
+        monkeypatch.setattr(
+            reader, "read", lambda files, *a, **k: calls.append(list(files)) or real(files, *a, **k)
+        )
+        again = {f.path.name: d for f, d in read_dates(reader, scan(src), cache=cache)}
+        assert again == first
+        assert first["c.jpg"] is NO_DATE
+        assert calls == []  # nada voltou ao ExifTool
+
+        make_sidecar(side, "2020-01-01T00:00:00")  # editado no Lightroom
+        os.utime(side, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+        third = {f.path.name: d for f, d in read_dates(reader, scan(src), cache=cache)}
+    assert third["a.jpg"].value == datetime(2020, 1, 1)
+    assert [Path(p).name for p in calls[0]] == ["a.jpg"]  # só o que mudou foi relido

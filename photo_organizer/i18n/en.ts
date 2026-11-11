@@ -321,172 +321,167 @@
 <context>
     <name>MainWindow</name>
     <message>
-        <location filename="../ui/main_window.py" line="184" />
+        <location filename="../ui/main_window.py" line="187" />
         <source>&amp;Arquivo</source>
         <translation>&amp;File</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="185" />
+        <location filename="../ui/main_window.py" line="188" />
         <source>Escolher origem…</source>
         <translation>Choose source…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="187" />
+        <location filename="../ui/main_window.py" line="190" />
         <source>Escolher destino…</source>
         <translation>Choose destination…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="190" />
-        <location filename="../ui/main_window.py" line="265" />
+        <location filename="../ui/main_window.py" line="193" />
+        <location filename="../ui/main_window.py" line="268" />
         <source>Escanear</source>
         <translation>Scan</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="192" />
-        <location filename="../ui/main_window.py" line="253" />
-        <location filename="../ui/main_window.py" line="269" />
-        <location filename="../ui/main_window.py" line="955" />
-        <location filename="../ui/main_window.py" line="957" />
+        <location filename="../ui/main_window.py" line="195" />
+        <location filename="../ui/main_window.py" line="256" />
+        <location filename="../ui/main_window.py" line="272" />
+        <location filename="../ui/main_window.py" line="962" />
+        <location filename="../ui/main_window.py" line="964" />
         <source>Organizar</source>
         <translation>Organize</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="195" />
+        <location filename="../ui/main_window.py" line="198" />
         <source>Sair</source>
         <translation>Exit</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="197" />
+        <location filename="../ui/main_window.py" line="200" />
         <source>&amp;Exibir</source>
         <translation>&amp;View</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="198" />
+        <location filename="../ui/main_window.py" line="201" />
         <source>Idioma</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="206" />
+        <location filename="../ui/main_window.py" line="209" />
         <source>A&amp;juda</source>
         <translation>&amp;Help</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="207" />
-        <location filename="../ui/main_window.py" line="1063" />
+        <location filename="../ui/main_window.py" line="210" />
+        <location filename="../ui/main_window.py" line="1070" />
         <source>Sobre o Photo Organizer</source>
         <translation>About Photo Organizer</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="237" />
+        <location filename="../ui/main_window.py" line="240" />
         <source>Origem</source>
         <translation>Source</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="237" />
-        <location filename="../ui/main_window.py" line="239" />
+        <location filename="../ui/main_window.py" line="240" />
+        <location filename="../ui/main_window.py" line="242" />
         <source>Escolher pasta…</source>
         <translation>Choose folder…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="239" />
+        <location filename="../ui/main_window.py" line="242" />
         <source>Destino</source>
         <translation>Destination</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="254" />
-        <location filename="../ui/main_window.py" line="309" />
+        <location filename="../ui/main_window.py" line="257" />
+        <location filename="../ui/main_window.py" line="312" />
         <source>Duplicadas</source>
         <translation>Duplicates</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="255" />
+        <location filename="../ui/main_window.py" line="258" />
         <source>Tags IA</source>
         <translation>AI Tags</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="305" />
+        <location filename="../ui/main_window.py" line="308" />
         <source>Todos</source>
         <translation>All</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="306" />
+        <location filename="../ui/main_window.py" line="309" />
         <source>Fotos</source>
         <translation>Photos</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="308" />
+        <location filename="../ui/main_window.py" line="311" />
         <source>Vídeos</source>
         <translation>Videos</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="370" />
-        <location filename="../ui/main_window.py" line="740" />
+        <location filename="../ui/main_window.py" line="373" />
+        <location filename="../ui/main_window.py" line="747" />
         <source>Ver falhas</source>
         <translation>Show failures</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="380" />
+        <location filename="../ui/main_window.py" line="383" />
         <source>Escanear de novo</source>
         <translation>Scan again</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="405" />
-        <location filename="../ui/main_window.py" line="689" />
+        <location filename="../ui/main_window.py" line="408" />
+        <location filename="../ui/main_window.py" line="695" />
         <source>Cancelar</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="419" />
+        <location filename="../ui/main_window.py" line="422" />
         <source>Pasta de origem</source>
         <translation>Source folder</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="425" />
+        <location filename="../ui/main_window.py" line="428" />
         <source>Pasta de destino</source>
         <translation>Destination folder</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="457" />
+        <location filename="../ui/main_window.py" line="461" />
         <source>Não foi possível acessar a pasta de origem:</source>
         <translation>Could not access the source folder:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="480" />
+        <location filename="../ui/main_window.py" line="484" />
         <source>Nenhuma foto ou vídeo encontrado</source>
         <translation>No photos or videos found</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="481" />
+        <location filename="../ui/main_window.py" line="485" />
         <source>A origem não tem JPEG, RAW ou vídeos suportados.</source>
         <translation>The source has no supported JPEG, RAW or video files.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="544" />
+        <location filename="../ui/main_window.py" line="549" />
         <source>… e mais {n}</source>
         <translation>… and {n} more</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="545" />
-        <source>{n} pastas não puderam ser lidas e ficaram de fora:</source>
-        <translation>{n} folders could not be read and were skipped:</translation>
-    </message>
-    <message>
-        <location filename="../ui/main_window.py" line="568" />
+        <location filename="../ui/main_window.py" line="573" />
         <source>Escolha o destino</source>
         <translation>Choose the destination</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="569" />
+        <location filename="../ui/main_window.py" line="574" />
         <source>{n} arquivos lidos. Escolha a pasta de destino para ver o plano.</source>
         <translation>{n} files read. Choose the destination folder to see the plan.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="647" />
+        <location filename="../ui/main_window.py" line="653" />
         <source>Não foi possível acessar a pasta de destino:</source>
         <translation>Could not access the destination folder:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="661" />
+        <location filename="../ui/main_window.py" line="667" />
         <source>Mover {n} arquivos para
 {dest}?
 
@@ -497,7 +492,7 @@ Os arquivos saem da origem. Não há desfazer; um relatório CSV registra cada a
 The files leave the source. There is no undo; a CSV report records every file.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="665" />
+        <location filename="../ui/main_window.py" line="671" />
         <source>Copiar {n} arquivos para
 {dest}?
 
@@ -508,131 +503,141 @@ A origem não é alterada.</source>
 The source is not changed.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="686" />
-        <location filename="../ui/main_window.py" line="955" />
+        <location filename="../ui/main_window.py" line="692" />
+        <location filename="../ui/main_window.py" line="962" />
         <source>Mover</source>
         <translation>Move</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="686" />
+        <location filename="../ui/main_window.py" line="692" />
         <source>Copiar</source>
         <translation>Copy</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="705" />
+        <location filename="../ui/main_window.py" line="712" />
         <source>Organizados: {n}</source>
         <translation>Organized: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="706" />
+        <location filename="../ui/main_window.py" line="713" />
         <source>Já estavam no lugar: {n}</source>
         <translation>Already in place: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="717" />
+        <location filename="../ui/main_window.py" line="724" />
         <source>Com aviso: {n}</source>
         <translation>With warnings: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="719" />
-        <location filename="../ui/main_window.py" line="827" />
+        <location filename="../ui/main_window.py" line="726" />
+        <location filename="../ui/main_window.py" line="834" />
         <source>Com erro: {n}</source>
         <translation>Failed: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="721" />
+        <location filename="../ui/main_window.py" line="728" />
         <source>Cancelados (não tocados): {n}</source>
         <translation>Cancelled (untouched): {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="723" />
+        <location filename="../ui/main_window.py" line="730" />
         <source>Organização cancelada</source>
         <translation>Organizing cancelled</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="725" />
+        <location filename="../ui/main_window.py" line="732" />
         <source>Organização concluída</source>
         <translation>Organizing finished</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="727" />
+        <location filename="../ui/main_window.py" line="734" />
         <source>Relatório: {path}</source>
         <translation>Report: {path}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="764" />
+        <location filename="../ui/main_window.py" line="771" />
         <source>Falhas</source>
         <translation>Failures</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="765" />
+        <location filename="../ui/main_window.py" line="772" />
         <source>{n} arquivos tiveram erro ou aviso. A lista completa está no relatório.</source>
         <translation>{n} files had an error or warning. The full list is in the report.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="879" />
+        <location filename="../ui/main_window.py" line="886" />
         <source>Tarefa cancelada.</source>
         <translation>Task cancelled.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="375" />
+        <location filename="../ui/main_window.py" line="378" />
         <source>Abrir destino</source>
         <translation>Open destination</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="365" />
-        <location filename="../ui/main_window.py" line="737" />
-        <location filename="../ui/main_window.py" line="774" />
+        <location filename="../ui/main_window.py" line="368" />
+        <location filename="../ui/main_window.py" line="744" />
+        <location filename="../ui/main_window.py" line="781" />
         <source>Abrir relatório</source>
         <translation>Open report</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="655" />
+        <location filename="../ui/main_window.py" line="546" />
+        <source>o arquivo não pôde ser aberto</source>
+        <translation>the file could not be opened</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="550" />
+        <source>{n} pastas ou arquivos não puderam ser lidos e ficaram de fora:</source>
+        <translation>{n} folders or files could not be read and were skipped:</translation>
+    </message>
+    <message>
+        <location filename="../ui/main_window.py" line="661" />
         <source>Nenhum arquivo para copiar ou mover.</source>
         <translation>No files to copy or move.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="672" />
+        <location filename="../ui/main_window.py" line="678" />
         <source>{n} substituem fotos do destino; as antigas vão para a Lixeira.</source>
         <translation>{n} replace destination photos; the old ones go to the Recycle Bin.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="678" />
+        <location filename="../ui/main_window.py" line="684" />
         <source>{n} desmarcados saem da origem e vão para a Lixeira.</source>
         <translation>{n} unchecked files leave the source and go to the Recycle Bin.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="709" />
+        <location filename="../ui/main_window.py" line="716" />
         <source>Substituíram a do destino: {n}</source>
         <translation>Replaced the destination file: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="710" />
+        <location filename="../ui/main_window.py" line="717" />
         <source>Já existiam no destino (ficou a de lá): {n}</source>
         <translation>Already in the destination (kept that one): {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="711" />
+        <location filename="../ui/main_window.py" line="718" />
         <source>Deixados de fora: {n}</source>
         <translation>Left out: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="712" />
+        <location filename="../ui/main_window.py" line="719" />
         <source>Deixados de fora e enviados para a Lixeira: {n}</source>
         <translation>Left out and sent to the Recycle Bin: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="791" />
+        <location filename="../ui/main_window.py" line="798" />
         <source>Não foi possível acessar a pasta:</source>
         <translation>Could not access the folder:</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="803" />
+        <location filename="../ui/main_window.py" line="810" />
         <source>Nenhuma foto JPEG ou RAW encontrada nessa pasta.</source>
         <translation>No JPEG or RAW photos found in this folder.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="810" />
+        <location filename="../ui/main_window.py" line="817" />
         <source>Gravar as tags em {n} fotos?
 
 Elas vão para os sidecars .xmp, somadas às que já existem; os arquivos originais não mudam.</source>
@@ -641,164 +646,164 @@ Elas vão para os sidecars .xmp, somadas às que já existem; os arquivos origin
 They go into the .xmp sidecars, added to the existing ones; the original files are not changed.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="825" />
+        <location filename="../ui/main_window.py" line="832" />
         <source>Fotos com tags gravadas: {n}</source>
         <translation>Photos tagged: {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="830" />
+        <location filename="../ui/main_window.py" line="837" />
         <source>Tags gravadas</source>
         <translation>Tags written</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="845" />
+        <location filename="../ui/main_window.py" line="852" />
         <source>Cancelando…</source>
         <translation>Cancelling…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="851" />
+        <location filename="../ui/main_window.py" line="858" />
         <source>Procurando arquivos… {d}</source>
         <translation>Finding files… {d}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="852" />
+        <location filename="../ui/main_window.py" line="859" />
         <source>Lendo metadados… {d} / {t}</source>
         <translation>Reading metadata… {d} / {t}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="853" />
+        <location filename="../ui/main_window.py" line="860" />
         <source>Comparando imagens… {d} / {t}</source>
         <translation>Comparing images… {d} / {t}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="854" />
+        <location filename="../ui/main_window.py" line="861" />
         <source>Procurando no destino… {d}</source>
         <translation>Searching the destination… {d}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="855" />
+        <location filename="../ui/main_window.py" line="862" />
         <source>Lendo o destino… {d} / {t}</source>
         <translation>Reading the destination… {d} / {t}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="856" />
+        <location filename="../ui/main_window.py" line="863" />
         <source>Organizando… {d} / {t}</source>
         <translation>Organizing… {d} / {t}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="857" />
+        <location filename="../ui/main_window.py" line="864" />
         <source>Analisando fotos… {d} / {t}</source>
         <translation>Analyzing photos… {d} / {t}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="858" />
+        <location filename="../ui/main_window.py" line="865" />
         <source>Gravando tags… {d} / {t}</source>
         <translation>Writing tags… {d} / {t}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="872" />
+        <location filename="../ui/main_window.py" line="879" />
         <source>Ocorreu um erro:
 {m}</source>
         <translation>An error occurred:
 {m}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="892" />
+        <location filename="../ui/main_window.py" line="899" />
         <source>Preparando…</source>
         <translation>Preparing…</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="894" />
+        <location filename="../ui/main_window.py" line="901" />
         <source>Pronto</source>
         <translation>Ready</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="925" />
+        <location filename="../ui/main_window.py" line="932" />
         <source>Escolha a origem e o destino</source>
         <translation>Choose the source and destination</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="926" />
+        <location filename="../ui/main_window.py" line="933" />
         <source>Origem: onde estão as fotos (cartão, pasta do celular…). Destino: onde ficará a biblioteca organizada.</source>
         <translation>Source: where the photos are (memory card, phone folder…). Destination: where the organized library will live.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="931" />
+        <location filename="../ui/main_window.py" line="938" />
         <source>Pronto para escanear</source>
         <translation>Ready to scan</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="932" />
+        <location filename="../ui/main_window.py" line="939" />
         <source>Clique em Escanear para ler as datas dos arquivos da origem.</source>
         <translation>Click Scan to read the dates of the files in the source.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="956" />
+        <location filename="../ui/main_window.py" line="963" />
         <source>itens</source>
         <translation>items</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="956" />
+        <location filename="../ui/main_window.py" line="963" />
         <source>item</source>
         <translation>item</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="962" />
+        <location filename="../ui/main_window.py" line="969" />
         <source>{n} itens</source>
         <translation>{n} items</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="967" />
+        <location filename="../ui/main_window.py" line="974" />
         <source>escaneados</source>
         <translation>scanned</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="969" />
+        <location filename="../ui/main_window.py" line="976" />
         <source>de {n}</source>
         <translation>of {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="991" />
+        <location filename="../ui/main_window.py" line="998" />
         <source>Vídeo {n}</source>
         <translation>Video {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="992" />
+        <location filename="../ui/main_window.py" line="999" />
         <source>Nome {n}</source>
         <translation>Name {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="993" />
+        <location filename="../ui/main_window.py" line="1000" />
         <source>Sem data {n}</source>
         <translation>No date {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="994" />
+        <location filename="../ui/main_window.py" line="1001" />
         <source>Duplicadas {n}</source>
         <translation>Duplicates {n}</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="1004" />
+        <location filename="../ui/main_window.py" line="1011" />
         <source>A pasta não existe ou não está disponível.</source>
         <translation>The folder does not exist or is not available.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="1015" />
+        <location filename="../ui/main_window.py" line="1022" />
         <source>Pasta de rede: abra-a uma vez no Explorador de Arquivos para entrar com usuário e senha e tente de novo.</source>
         <translation>Network folder: open it once in File Explorer to sign in with your user name and password, then try again.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="1055" />
+        <location filename="../ui/main_window.py" line="1062" />
         <source>Reinicie o Photo Organizer para trocar o idioma.</source>
         <translation>Restart Photo Organizer to change the language.</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="1065" />
+        <location filename="../ui/main_window.py" line="1072" />
         <source>&lt;b&gt;Photo Organizer {v}&lt;/b&gt;&lt;br&gt;Organiza fotos e vídeos por data EXIF/XMP, separa duplicadas e sugere tags.&lt;br&gt;&lt;br&gt;Usa ExifTool (Phil Harvey), Qt, OpenCV e ícones Lucide.&lt;br&gt;Tags: YOLOX (Megvii, Apache-2.0, via OpenCV Model Zoo) e SigLIP 2 (Google, Apache-2.0).</source>
         <translation>&lt;b&gt;Photo Organizer {v}&lt;/b&gt;&lt;br&gt;Organizes photos and videos by EXIF/XMP date, sets duplicates aside and suggests tags.&lt;br&gt;&lt;br&gt;Uses ExifTool (Phil Harvey), Qt, OpenCV and Lucide icons.&lt;br&gt;Tags: YOLOX (Megvii, Apache-2.0, via OpenCV Model Zoo) and SigLIP 2 (Google, Apache-2.0).</translation>
     </message>
     <message>
-        <location filename="../ui/main_window.py" line="1081" />
+        <location filename="../ui/main_window.py" line="1088" />
         <source>Há uma tarefa em andamento. Cancelar e sair?</source>
         <translation>A task is running. Cancel it and exit?</translation>
     </message>

@@ -73,16 +73,19 @@ def build_plan(
     excluded: Collection[Path] = (),
     trash_excluded: bool = False,
     in_dest: Mapping[Path, tuple[DestAction, MediaFile]] | None = None,
+    listings: dict[str, frozenset[str]] | None = None,
 ) -> Plan:
     """``duplicates`` vão para a pasta de duplicadas; ``excluded`` ficam onde estão (ou vão
     para a Lixeira, com ``trash_excluded``); ``in_dest`` diz, para cada foto que já existe
-    no destino, a ação e a foto de lá."""
+    no destino, a ação e a foto de lá. ``listings`` guarda o conteúdo das pastas do destino
+    entre um plano e outro (cada ajuste nas regras refaz o plano; numa rede, relistar mil
+    pastas a cada clique demora). Quem passa limpa quando o destino muda."""
     root = Path(root)
     dup_keys = {path_key(p) for p in duplicates}
     out_keys = {path_key(p) for p in excluded}
     found = {path_key(p): v for p, v in (in_dest or {}).items()}
     replaced: set[str] = set()
-    names = _NameIndex()
+    names = _NameIndex(listings)
     plan = Plan(root)
     for media, date in files:
         key = path_key(media.path)
@@ -146,22 +149,26 @@ def _sidecar_name(media: MediaFile, new_name: str) -> str | None:
 class _NameIndex:
     """Nomes ocupados por pasta: o que já existe no disco mais o que o plano reservou."""
 
-    def __init__(self) -> None:
-        self._dirs: dict[str, set[str]] = {}
+    def __init__(self, disk: dict[str, frozenset[str]] | None = None) -> None:
+        self._disk = disk if disk is not None else {}  # pode vir de planos anteriores
+        self._claimed: dict[str, set[str]] = {}
 
-    def _names(self, folder: Path) -> set[str]:
-        k = path_key(folder)
-        if k not in self._dirs:
+    def _on_disk(self, k: str, folder: Path) -> frozenset[str]:
+        if k not in self._disk:
             try:
-                self._dirs[k] = {n.lower() for n in os.listdir(folder)}  # noqa: PTH208 (só nomes, mais rápido)
+                names = frozenset(n.lower() for n in os.listdir(folder))  # noqa: PTH208 (só nomes, mais rápido)
+            except FileNotFoundError:
+                names = frozenset()  # pasta ainda não existe: o Organizar a cria
             except OSError:
-                # Pasta ainda não existe ou sem acesso (rede fora do ar): o executor
-                # nunca sobrescreve, então o pior caso é um erro por arquivo no relatório.
-                self._dirs[k] = set()
-        return self._dirs[k]
+                # Sem acesso (rede fora do ar): não guarda, o próximo plano tenta de novo. O
+                # executor nunca sobrescreve: o pior caso é um erro por arquivo no relatório.
+                return frozenset()
+            self._disk[k] = names
+        return self._disk[k]
 
     def taken(self, folder: Path, name: str) -> bool:
-        return name.lower() in self._names(folder)
+        k, n = path_key(folder), name.lower()
+        return n in self._claimed.get(k, ()) or n in self._on_disk(k, folder)
 
     def claim(self, folder: Path, name: str) -> None:
-        self._names(folder).add(name.lower())
+        self._claimed.setdefault(path_key(folder), set()).add(name.lower())
